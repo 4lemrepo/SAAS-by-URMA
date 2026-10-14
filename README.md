@@ -1,5 +1,7 @@
 # Control Diésel
 
+[![Pruebas](https://github.com/4lemrepo/SAAS-by-URMA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/4lemrepo/SAAS-by-URMA/actions/workflows/ci.yml)
+
 Software para que una flotilla de carga sepa, cada semana, cuántos litros y cuántos pesos
 de diésel se perdieron por unidad, operador y ruta.
 
@@ -33,6 +35,9 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    da de alta la empresa → tablero.
 
 ## Pruebas
+
+En cada push y pull request a `main`, GitHub Actions corre `npm ci`, pruebas, tipos, lint, build
+y las pruebas de RLS contra un Postgres 16 desechable (`.github/workflows/ci.yml`). Variables falsas, sin secretos.
 
 - `npm test` — conciliación
 - `npm run typecheck` y `npm run lint`

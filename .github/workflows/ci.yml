@@ -1,0 +1,81 @@
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Solo lectura del repo: el workflow no publica nada.
+permissions:
+  contents: read
+
+# Un push nuevo cancela la corrida anterior de la misma rama.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App (pruebas, tipos, lint, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias (npm ci)
+        run: npm ci
+
+      - name: Pruebas de conciliación y validación (npm test)
+        run: npm test
+
+      - name: Revisión de tipos (npm run typecheck)
+        run: npm run typecheck
+
+      - name: Lint (npm run lint)
+        run: npm run lint
+
+      - name: Build de producción (npm run build)
+        run: npm run build
+        env:
+          # Valores falsos a propósito: el build no se conecta a Supabase.
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-falso.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key-falsa
+
+  rls:
+    name: Seguridad (RLS en Postgres 16)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      # Contraseña del Postgres desechable de esta corrida, no es un secreto.
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente psql
+        run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Pruebas de seguridad entre empresas y roles (correr.sh)
+        run: ./supabase/pruebas/correr.sh
