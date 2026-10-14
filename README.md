@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Control Diésel
 
-## Getting Started
+Software para que una flotilla de carga sepa, cada semana, cuántos litros y cuántos pesos
+de diésel se perdieron por unidad, operador y ruta.
 
-First, run the development server:
+Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidades.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Qué hay hoy
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Parte | Dónde | Estado |
+| --- | --- | --- |
+| Esquema de base de datos multiempresa con seguridad por empresa (RLS) | `supabase/migrations/` | Listo, con 10 pruebas de acceso |
+| Lógica de conciliación: litros teóricos, semáforo, pesos faltantes, cuadre de tanque | `src/lib/conciliacion/` | Lista, con 15 pruebas |
+| Conexión a Supabase (navegador y servidor) | `src/lib/supabase/` | Lista |
+| Login, catálogos, viajes, app del operador, tablero | — | Siguiente |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Cómo correrlo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Instala Node 22 o más reciente.
+2. `npm install`
+3. Crea un proyecto en [Supabase](https://supabase.com), corre la migración de
+   `supabase/migrations/` (SQL Editor o Supabase CLI) y copia `.env.example` a `.env.local`
+   con la URL y la anon key del proyecto.
+4. `npm run dev` y abre http://localhost:3000
 
-## Learn More
+## Pruebas
 
-To learn more about Next.js, take a look at the following resources:
+- `npm test` — conciliación
+- `npm run typecheck` y `npm run lint`
+- `supabase/pruebas/correr.sh` — seguridad entre empresas y roles (requiere un Postgres local)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Cómo funciona la conciliación
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Litros teóricos** = km cargado ÷ rendimiento cargado + km vacío ÷ rendimiento vacío.
+  El rendimiento de la ruta, si existe, manda sobre el de la unidad.
+- **Semáforo** con la tolerancia de cada empresa (5% por defecto):
+  verde dentro de tolerancia; amarillo entre 1× y 2×, o consumo muy bajo (posible carga sin registrar);
+  rojo arriba de 2×.
+- **Pesos faltantes** = litros de más × precio por litro.
+- **Tanque propio:** lectura inicial + entradas de pipa + ajustes − despachos, contra la lectura física final.
