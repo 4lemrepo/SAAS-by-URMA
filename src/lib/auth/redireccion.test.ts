@@ -90,7 +90,13 @@ describe("tablero (usuarioConEmpresa)", () => {
   it("usuario con empresa: entra al tablero con su empresa", async () => {
     conEmpresa();
     const u = await usuarioConEmpresa();
-    expect(u.empresa).toEqual({ empresaId: "e1", empresaNombre: "URMA Logistic", rol: "dueno" });
+    expect(u.empresa).toEqual({
+      empresaId: "e1",
+      empresaNombre: "URMA Logistic",
+      rol: "dueno",
+      veTarifas: true,
+      puedeReabrir: true,
+    });
   });
   it("usuario sin empresa: va al alta", async () => {
     expect(await destinoDe(usuarioConEmpresa)).toBe("/alta-empresa");

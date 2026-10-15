@@ -114,7 +114,7 @@ describe("validarRegistro: otros catálogos", () => {
   });
   it("cliente: RFC opcional, en mayúsculas y bien formado", () => {
     const r = validarRegistro(CATALOGOS.clientes, { nombre: "Agro SA", rfc: "agr010101ab1" });
-    expect(r).toEqual({ ok: true, datos: { nombre: "Agro SA", rfc: "AGR010101AB1" } });
+    expect(r).toEqual({ ok: true, datos: { nombre: "Agro SA", rfc: "AGR010101AB1", factura_por: "cargado" } });
     expect(validarRegistro(CATALOGOS.clientes, { nombre: "Agro SA", rfc: "123" }).ok).toBe(false);
   });
   it("ruta: km obligatorio y mayor que cero; rendimientos opcionales", () => {

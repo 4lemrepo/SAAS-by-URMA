@@ -10,7 +10,9 @@ psql -q -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/00_stub_supabase.sql"
 for MIGRACION in "$DIR"/../migrations/*.sql; do
   psql -q -d "$DB" -v ON_ERROR_STOP=1 -f "$MIGRACION"
 done
-psql -q -d "$DB" -c "grant all on all tables in schema public to authenticated; grant execute on all functions in schema public to authenticated;"
+# Como Supabase: authenticated usa las tablas (RLS decide qué filas). Las funciones
+# conservan los permisos que dejaron las migraciones (revoke incluidos).
+psql -q -d "$DB" -c "grant all on all tables in schema public to authenticated;"
 # Fallo visible también en la pestaña "Summary" de GitHub Actions.
 falla() {
   echo "❌ $1"

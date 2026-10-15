@@ -19,6 +19,7 @@ export type Permiso =
   | "editarCatalogos"
   | "capturar"
   | "validarCargas"
+  | "cerrarViajes"
   | "verConciliacion";
 
 const PERMISOS: Record<Rol, readonly Permiso[]> = {
@@ -29,9 +30,10 @@ const PERMISOS: Record<Rol, readonly Permiso[]> = {
     "editarCatalogos",
     "capturar",
     "validarCargas",
+    "cerrarViajes",
     "verConciliacion",
   ],
-  administracion: ["verCatalogos", "editarCatalogos", "capturar", "validarCargas", "verConciliacion"],
+  administracion: ["verCatalogos", "editarCatalogos", "capturar", "validarCargas", "cerrarViajes", "verConciliacion"],
   captura: ["verCatalogos", "capturar"],
 };
 

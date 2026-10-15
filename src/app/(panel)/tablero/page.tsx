@@ -23,6 +23,14 @@ async function Tablero() {
     <>
       <h1 className="text-2xl font-semibold">{empresa.empresaNombre}</h1>
 
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium tracking-wide text-zinc-500 uppercase">Operación</h2>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Tarjeta href="/viajes" titulo="Viajes" texto="Tramos, cargas de diésel, gastos, cierre y exportación." />
+          <Tarjeta href="/viajes/nuevo" titulo="Nuevo viaje" texto="Empieza donde terminó el viaje anterior de la unidad." />
+        </ul>
+      </section>
+
       {puede(empresa.rol, "verCatalogos") && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium tracking-wide text-zinc-500 uppercase">
@@ -52,10 +60,13 @@ async function Tablero() {
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium tracking-wide text-zinc-500 uppercase">Empresa</h2>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {puede(empresa.rol, "administrarUsuarios") && (
+              <Tarjeta href="/usuarios" titulo="Usuarios" texto="Quién puede reabrir viajes y quién ve tarifas e ingresos." />
+            )}
             <Tarjeta
               href="/parametros"
               titulo="Parámetros"
-              texto="Tolerancias del semáforo y de kilómetros, y precio del diésel por litro."
+              texto="Tolerancias, precio del diésel, folios, alertas y pago al operador."
             />
           </ul>
         </section>

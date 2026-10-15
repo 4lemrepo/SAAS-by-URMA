@@ -38,8 +38,9 @@ describe("plantilla", () => {
     expect(m.faltantes).toEqual([]);
     expect(m.ignoradas).toEqual(["Color"]);
   });
-  it("avisa si falta una columna obligatoria", () => {
+  it("avisa si falta una columna obligatoria (salvo las que tienen valor por defecto)", () => {
     expect(mapearEncabezados(CATALOGOS.rutas, ["Origen", "Destino"]).faltantes).toEqual(["Kilómetros"]);
+    expect(mapearEncabezados(CATALOGOS.clientes, ["Nombre o razón social"]).faltantes).toEqual([]);
   });
 });
 

@@ -43,7 +43,11 @@ export function mapearEncabezados(def: DefinicionCatalogo, encabezados: readonly
     if (campo && !(campo.columna in indices)) indices[campo.columna] = i;
     else ignoradas.push(String(e).trim());
   });
-  const faltantes = def.campos.filter((c) => c.requerido && !(c.columna in indices)).map((c) => sinOpcional(c.etiqueta));
+  // Un campo obligatorio con valor por defecto puede faltar en el archivo.
+  const conDefecto = (c: (typeof def.campos)[number]) => c.tipo === "opcion" && !!c.porDefecto;
+  const faltantes = def.campos
+    .filter((c) => c.requerido && !conDefecto(c) && !(c.columna in indices))
+    .map((c) => sinOpcional(c.etiqueta));
   return { indices, faltantes, ignoradas };
 }
 

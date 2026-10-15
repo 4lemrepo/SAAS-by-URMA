@@ -18,7 +18,9 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 | Roles: dueño, administración y captura | `src/lib/auth/permisos.ts` | Listo |
 | Catálogos (unidades, remolques, dollies, tipos de remolque, operadores, clientes, rutas, fuentes) y parámetros | `src/app/(panel)/`, `src/lib/catalogos/` | Listo |
 | Importación de catálogos (plantilla por catálogo o control de viajes) | `src/app/(panel)/catalogos/importar/`, `src/lib/importacion/` | Listo |
-| Usuarios con invitación por correo | — | Siguiente |
+| Viajes: tramos, cargas, gastos, tarifa, pago al operador, cierre, bitácora y exportación | `src/app/(panel)/viajes/`, `src/lib/viajes/` | Listo |
+| Usuarios (permisos; invitaciones después) | `src/app/(panel)/usuarios/` | Permisos listos |
+| Costos de unidad y tablero de KPIs | — | Siguiente |
 | Viajes, cargas con foto y validación, conciliación en el tablero | — | Pendiente |
 
 ## Cómo correrlo
@@ -36,6 +38,8 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    7. `supabase/migrations/20261016000000_remolques_armados.sql`
    8. `supabase/migrations/20261016000100_autovalidacion_parametros.sql`
    9. `supabase/migrations/20261016000200_tramos_importacion.sql`
+   10. `supabase/migrations/20261017000000_folios_permisos_bitacora.sql`
+   11. `supabase/migrations/20261017000100_viajes.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
@@ -120,6 +124,27 @@ la ida y el regreso son dos rutas. Un viaje tiene un tramo cargado y un tramo va
 (regreso o reposicionamiento), cada uno con su ruta. Los km se prellenan desde la ruta y son
 editables; si se desvían más que la tolerancia de km de la empresa (10% por defecto, en
 Parámetros) el viaje se marca para revisión (`src/lib/viajes/km.ts`).
+
+## Viajes
+
+Un viaje = **tramo vacío** (A → B, lugar de carga) + **tramo cargado** (B → C, lugar de descarga).
+El siguiente viaje de la unidad se prellena desde C con su último odómetro; si el odómetro inicial no
+coincide, la diferencia son **km sin viaje** y se pide explicación. Si un tramo se desvía de su ruta
+más que la tolerancia de km, se pide motivo. Cada viaje guarda el armado que traía la unidad.
+
+- **Folios** consecutivos por empresa (viajes, gastos y costos) con prefijo y número en Parámetros.
+- **Ingreso** = flete (tarifa × toneladas facturadas, según el cliente factura por peso cargado o
+  descargado; o monto fijo) + gastos que se facturan al cliente.
+- **Pago al operador**: esquema por empresa, editable por operador y por viaje; cada viaje guarda lo
+  que usó. Tarifa, ingreso, pago y utilidad viven en `viajes_finanzas`: sin el permiso
+  "ve tarifas e ingresos" la base no los devuelve.
+- **Cierre**: no con cargas pendientes ni tramos incompletos. Cerrado, nada del viaje se edita.
+  Reabrir: el dueño, o administración con el permiso "puede reabrir viajes", con motivo.
+- **Bitácora**: quién cambió qué campo, cuándo, valor anterior y nuevo (viaje, tramos, tarifa,
+  gastos y cargas). La ven dueño y administración en la pantalla del viaje.
+- Las fechas se capturan y muestran en hora del centro de México.
+
+Los cálculos (km, flete, pago, diésel, utilidad, merma) están en `src/lib/viajes/calculos.ts`.
 
 ## Importar catálogos
 

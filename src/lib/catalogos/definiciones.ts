@@ -8,6 +8,7 @@ export type ClaveCatalogo =
   | "remolques"
   | "dollies"
   | "tipos-remolque"
+  | "categorias-gasto"
   | "operadores"
   | "clientes"
   | "rutas"
@@ -200,6 +201,21 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     columnaEtiqueta: "nombre",
     orden: "nombre",
   },
+  "categorias-gasto": {
+    clave: "categorias-gasto",
+    tabla: "categorias_gasto",
+    titulo: "Categorías de gasto",
+    singular: "categoría de gasto",
+    conArticulo: "una categoría de gasto",
+    descripcion: "Casetas, maniobras, estadías… para los gastos de cada viaje.",
+    columnaActivo: "activo",
+    campos: [{ columna: "nombre", etiqueta: "Nombre", tipo: "texto", requerido: true, min: 2, max: 60 }],
+    llaveUnica: ["nombre"],
+    mensajeDuplicado: "Ya existe esa categoría",
+    columnasLista: ["nombre"],
+    columnaEtiqueta: "nombre",
+    orden: "nombre",
+  },
   operadores: {
     clave: "operadores",
     tabla: "operadores",
@@ -242,10 +258,22 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
         mayusculas: true,
         patron: { regex: PATRON_RFC, mensaje: "RFC inválido (12 caracteres para persona moral, 13 para física)" },
       },
+      {
+        columna: "factura_por",
+        etiqueta: "Se factura por peso",
+        tipo: "opcion",
+        requerido: true,
+        opciones: [
+          { valor: "cargado", etiqueta: "Cargado" },
+          { valor: "descargado", etiqueta: "Descargado" },
+        ],
+        porDefecto: "cargado",
+        ayuda: "Con cuál peso se calcula el flete por tonelada",
+      },
     ],
     llaveUnica: ["nombre"],
     mensajeDuplicado: "Ya existe un cliente con ese nombre",
-    columnasLista: ["nombre", "rfc"],
+    columnasLista: ["nombre", "rfc", "factura_por"],
     columnaEtiqueta: "nombre",
     orden: "nombre",
   },

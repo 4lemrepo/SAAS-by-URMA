@@ -86,7 +86,11 @@ begin
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
   select id into u from unidades where empresa_id = e;
   insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e,u,o,now()) returning id into v_abierto;
-  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, estado) values (e,u,o,now(),'cerrado') returning id into v_cerrado;
+  -- Un viaje se cierra con sus dos tramos y fecha de llegada (no nace cerrado).
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, fecha_llegada) values (e,u,o,now(),now()) returning id into v_cerrado;
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final)
+    values (e, v_cerrado, 'vacio', 'Pueblo X', 'Pueblo Y', 1000, 1100), (e, v_cerrado, 'cargado', 'Pueblo Y', 'Pueblo Z', 1100, 1500);
+  update viajes set estado = 'cerrado' where id = v_cerrado;
   insert into ctx values ('viajeAbierto', v_abierto), ('viajeCerrado', v_cerrado);
 
   -- 11. B no puede ligar su viaje a catálogos de A
@@ -105,7 +109,7 @@ begin
   -- 13. Captura no puede ligar carga a un viaje cerrado
   begin insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros)
     values (e,v_cerrado,u,o,f,100); raise notice '13 FALLA: captura cargó a viaje cerrado';
-  exception when insufficient_privilege then raise notice '13 OK: captura solo carga a viajes abiertos'; end;
+  exception when insufficient_privilege or raise_exception then raise notice '13 OK: captura solo carga a viajes abiertos'; end;
 
   -- 14. El único dueño no puede degradarse ni darse de baja
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
@@ -235,20 +239,20 @@ begin
   update miembros set rol = 'administracion' where usuario_id = '00000000-0000-0000-0000-0000000000a2'; get diagnostics n = row_count;
   raise notice '23c roles que administración cambió (esperado 0): %', n;
 
-  -- 24. Viajes: captura da de alta abiertos y corrige los suyos; cerrarlos no
+  -- 24. Viajes: captura da de alta y corrige cualquier viaje abierto; cerrarlos no
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
-  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, km_cargado) values (e,u,o,now(),300) returning id into viaje_cap;
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, toneladas_cargadas) values (e,u,o,now(),30) returning id into viaje_cap;
   raise notice '24 OK: captura dio de alta un viaje';
   begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, estado) values (e,u,o,now(),'cerrado');
     raise notice '24b FALLA: captura dio de alta un viaje cerrado';
-  exception when insufficient_privilege then raise notice '24b OK: captura no da de alta viajes cerrados'; end;
-  update viajes set km_vacio = 120 where id = viaje_cap; get diagnostics n = row_count;
+  exception when insufficient_privilege or raise_exception then raise notice '24b OK: captura no da de alta viajes cerrados'; end;
+  update viajes set toneladas_descargadas = 29.5 where id = viaje_cap; get diagnostics n = row_count;
   raise notice '24c viajes propios que captura corrigió (esperado 1): %', n;
   begin update viajes set estado = 'cerrado' where id = viaje_cap;
     raise notice '24d FALLA: captura cerró un viaje';
   exception when insufficient_privilege then raise notice '24d OK: captura no cierra viajes'; end;
-  update viajes set km_vacio = 1 where id = v_abierto; get diagnostics n = row_count;
-  raise notice '24e viajes ajenos que captura editó (esperado 0): %', n;
+  update viajes set producto = 'Maíz' where id = v_abierto; get diagnostics n = row_count;
+  raise notice '24e viajes abiertos de otros que captura corrigió (esperado 1): %', n;
   select count(*) into n from viajes; raise notice '24f viajes que ve captura (esperado 3): %', n;
   select capturado_por::text into t from viajes where id = viaje_cap;
   raise notice '24g viaje atribuido a captura: %', case when t = '00000000-0000-0000-0000-0000000000a2' then 'OK' else 'FALLA' end;
@@ -501,7 +505,7 @@ end $$;
 -- ---------- Tramos, crédito en estación e importación (migración 20261016000200) ----------
 do $$
 declare n int; t text; j jsonb; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
-  u uuid; ida uuid; regreso uuid; ruta_b uuid;
+  u uuid; ida uuid; regreso uuid; ruta_b uuid; viaje47 uuid;
 begin
   -- 46. Fuente de tipo crédito en estación
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
@@ -514,16 +518,19 @@ begin
   select id into u from unidades where empresa_id = e and numero_economico = '0708';
   insert into rutas (empresa_id, origen, destino, km) values (e, 'Pueblo A', 'Pueblo B', 400) returning id into ida;
   insert into rutas (empresa_id, origen, destino, km) values (e, 'Pueblo B', 'Pueblo A', 410) returning id into regreso;
-  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, ruta_cargado_id, km_cargado, km_cargado_ruta, ruta_vacio_id, km_vacio, km_vacio_ruta)
-    values (e, u, o, now(), ida, 455, 400, regreso, 410, 410);
-  raise notice '47 OK: viaje con tramo cargado y tramo vacío';
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e, u, o, now()) returning id into viaje47;
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final, ruta_id, km_ruta)
+    values (e, viaje47, 'vacio', 'Pueblo B', 'Pueblo A', 5000, 5410, regreso, 410),
+           (e, viaje47, 'cargado', 'Pueblo A', 'Pueblo B', 5410, 5865, ida, 400);
+  select sum(km)::int into n from tramos_viaje where viaje_id = viaje47;
+  raise notice '47 km del viaje = odómetro final − inicial de sus tramos (esperado 865): %', n;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
   insert into rutas (empresa_id, origen, destino, km)
     select empresa_id, 'Otra', 'Empresa', 10 from miembros where usuario_id = auth.uid() returning id into ruta_b;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
-  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, ruta_vacio_id) values (e, u, o, now(), ruta_b);
-    raise notice '47b FALLA: tramo vacío con ruta de otra empresa';
-  exception when foreign_key_violation then raise notice '47b OK: la ruta del tramo vacío es de la misma empresa'; end;
+  begin update tramos_viaje set ruta_id = ruta_b where viaje_id = viaje47 and tipo = 'vacio';
+    raise notice '47b FALLA: tramo con ruta de otra empresa';
+  exception when foreign_key_violation then raise notice '47b OK: la ruta del tramo es de la misma empresa'; end;
 
   -- 48. Importación: todo o nada
   j := importar_catalogos(e, '{"unidades":[{"numero_economico":"IMP-1","placas":"AAA111"}],
@@ -548,4 +555,172 @@ begin
   begin perform importar_catalogos(e, '{"operadores":[{"nombre":"De Otra Empresa"}]}');
     raise notice '49b FALLA: otra empresa importó en A';
   exception when insufficient_privilege then raise notice '49b OK: otra empresa no importa en A'; end;
+end $$;
+
+-- ---------- Viajes completos (migraciones 20261017000000 y 20261017000100) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  f uuid := (select v from ctx where k='fA'); u uuid; vj uuid; vj2 uuid; cat uuid; carga uuid; otra_u uuid;
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  select id into otra_u from unidades where empresa_id = e and numero_economico = 'T2';
+
+  -- 50. Folios consecutivos con prefijo; a mano solo dueño o administración; nunca repetidos
+  update parametros_empresa set folio_viaje_prefijo = 'URMA-', folio_viaje_siguiente = 182 where empresa_id = e;
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e,u,o,now()) returning id, folio into vj, t;
+  raise notice '50 folio asignado solo: %', case when t = 'URMA-0182' then 'OK' else 'FALLA ' || t end;
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, folio) values (e,u,o,now(),'URMA-0183');
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e,u,o,now()) returning folio into t;
+  raise notice '50b el consecutivo brinca el folio puesto a mano: %', case when t = 'URMA-0184' then 'OK' else 'FALLA ' || t end;
+  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, folio) values (e,u,o,now(),'urma-0182');
+    raise notice '50c FALLA: folio repetido';
+  exception when unique_violation then raise notice '50c OK: folio repetido rechazado'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, folio) values (e,u,o,now(),'MIO-1');
+    raise notice '50d FALLA: captura puso folio a mano';
+  exception when raise_exception then raise notice '50d OK: captura no pone folios a mano'; end;
+  begin update viajes set folio = 'MIO-2' where id = vj;
+    raise notice '50e FALLA: captura cambió un folio';
+  exception when raise_exception then raise notice '50e OK: captura no cambia folios'; end;
+
+  -- 51. Tarifas e ingresos: sin el permiso, la base no los devuelve
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  insert into viajes_finanzas (viaje_id, empresa_id, tarifa, pago_esquema, pago_pct) values (vj, e, 650, 'pct_subtotal', 12.6);
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from viajes_finanzas; raise notice '51 finanzas que ve captura sin permiso (esperado 0): %', n;
+  select count(*) into n from pago_operador_config; raise notice '51b config de pago que ve captura sin permiso (esperado 0): %', n;
+  update viajes_finanzas set tarifa = 1; get diagnostics n = row_count;
+  raise notice '51c finanzas que captura editó sin permiso (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  select count(*) into n from viajes_finanzas; raise notice '51d finanzas que ve administración (esperado 1): %', n;
+  update miembros set ve_tarifas = true where usuario_id = '00000000-0000-0000-0000-0000000000a2'; get diagnostics n = row_count;
+  raise notice '51e permisos que administración otorgó (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = true where usuario_id = '00000000-0000-0000-0000-0000000000a2';
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from viajes_finanzas; raise notice '51f finanzas que ve captura con permiso (esperado 1): %', n;
+  select pct::text into t from pago_operador_config where operador_id is null;
+  raise notice '51g esquema de pago por defecto 12.6 %%: %', case when t = '12.60' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = false where usuario_id = '00000000-0000-0000-0000-0000000000a2';
+
+  -- 52. Gastos con folio propio y categorías precargadas
+  select count(*) into n from categorias_gasto where empresa_id = e; raise notice '52 categorías de gasto precargadas (esperado 12): %', n;
+  select id into cat from categorias_gasto where empresa_id = e and nombre = 'Casetas';
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto, forma_pago, numero_comprobante)
+    values (e, vj, cat, 1250.50, 'tag', 'FAC-991') returning folio into t;
+  raise notice '52b folio de gasto: %', case when t = 'G-0001' then 'OK' else 'FALLA ' || t end;
+  begin insert into categorias_gasto (empresa_id, nombre) values (e, 'De captura');
+    raise notice '52c FALLA: captura creó una categoría';
+  exception when insufficient_privilege then raise notice '52c OK: captura no edita categorías de gasto'; end;
+  delete from gastos_viaje where viaje_id = vj; get diagnostics n = row_count;
+  raise notice '52d gastos borrados (esperado 0): %', n;
+
+  -- 53. Bitácora: quién cambió qué campo; captura no la ve y nadie la escribe
+  update viajes set producto = 'Sorgo' where id = vj;
+  select count(*) into n from bitacora; raise notice '53 bitácora que ve captura (esperado 0): %', n;
+  begin insert into bitacora (empresa_id, tabla, registro_id, accion) values (e, 'viajes', vj, 'cambio');
+    raise notice '53b FALLA: se escribió la bitácora directo';
+  exception when insufficient_privilege then raise notice '53b OK: nadie escribe la bitácora directo'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  select valor_nuevo || ' por ' || usuario_id::text into t from bitacora where viaje_id = vj and campo = 'producto';
+  raise notice '53c bitácora registra campo, valor y usuario: %', case when t = 'Sorgo por 00000000-0000-0000-0000-0000000000a2' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from bitacora where viaje_id = vj and tabla = 'gastos_viaje' and accion = 'alta';
+  raise notice '53d el alta del gasto aparece en la bitácora del viaje (esperado 1): %', n;
+  delete from bitacora where viaje_id = vj; get diagnostics n = row_count;
+  raise notice '53e renglones de bitácora borrados (esperado 0): %', n;
+
+  -- 54. Cierre: no con cargas pendientes, tramos incompletos o sin llegada
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final)
+    values (e, vj, 'vacio', 'Pueblo A', 'Pueblo B', 9000, 9100);
+  update viajes set fecha_llegada = now() where id = vj;
+  begin update viajes set estado = 'cerrado' where id = vj;
+    raise notice '54 FALLA: cerró sin tramo cargado';
+  exception when raise_exception then raise notice '54 OK: no cierra sin los dos tramos'; end;
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final)
+    values (e, vj, 'cargado', 'Pueblo B', 'Pueblo C', 9100, 9600);
+  insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros) values (e, vj, u, o, f, 400) returning id into carga;
+  begin insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros) values (e, vj, otra_u, o, f, 50);
+    raise notice '54b FALLA: carga de otra unidad ligada al viaje';
+  exception when raise_exception then raise notice '54b OK: la carga es de la unidad del viaje'; end;
+  begin update viajes set estado = 'cerrado' where id = vj;
+    raise notice '54c FALLA: cerró con carga pendiente';
+  exception when raise_exception then raise notice '54c OK: no cierra con cargas pendientes'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update cargas_diesel set estado = 'validada' where id = carga;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  update viajes set estado = 'cerrado' where id = vj;
+  select cerrado_por::text into t from viajes where id = vj;
+  raise notice '54d cerrado y quién lo cerró: %', case when t = '00000000-0000-0000-0000-0000000000a3' then 'OK' else 'FALLA' end;
+
+  -- 55. Cerrado: nadie edita el viaje, sus tramos, gastos, finanzas ni cargas
+  begin update viajes set producto = 'Otro' where id = vj; raise notice '55 FALLA: se editó un viaje cerrado';
+  exception when raise_exception then raise notice '55 OK: viaje cerrado no se edita'; end;
+  begin update tramos_viaje set odometro_final = 9700 where viaje_id = vj and tipo = 'cargado'; raise notice '55b FALLA: tramo editado';
+  exception when raise_exception then raise notice '55b OK: tramos de viaje cerrado no se editan'; end;
+  begin insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto) values (e, vj, cat, 10); raise notice '55c FALLA: gasto agregado';
+  exception when raise_exception then raise notice '55c OK: no se agregan gastos a un viaje cerrado'; end;
+  begin update viajes_finanzas set tarifa = 700 where viaje_id = vj; raise notice '55d FALLA: tarifa editada';
+  exception when raise_exception then raise notice '55d OK: finanzas de viaje cerrado no se editan'; end;
+  begin update cargas_diesel set viaje_id = null where id = carga; raise notice '55e FALLA: carga sacada del viaje cerrado';
+  exception when raise_exception then raise notice '55e OK: cargas de viaje cerrado no se mueven'; end;
+
+  -- 56. Reabrir: con permiso y motivo; queda en reaperturas y bitácora
+  begin perform reabrir_viaje(vj, 'Corregir tarifa');
+    raise notice '56 FALLA: administración reabrió sin permiso';
+  exception when insufficient_privilege then raise notice '56 OK: administración sin permiso no reabre'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  begin perform reabrir_viaje(vj, 'Corregir tarifa');
+    raise notice '56b FALLA: captura reabrió';
+  exception when insufficient_privilege then raise notice '56b OK: captura no reabre'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set puede_reabrir_viajes = true where usuario_id = '00000000-0000-0000-0000-0000000000a3';
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  begin perform reabrir_viaje(vj, 'no');
+    raise notice '56c FALLA: reabrió sin motivo';
+  exception when raise_exception then raise notice '56c OK: reabrir pide motivo'; end;
+  perform reabrir_viaje(vj, 'Corregir tarifa del cliente');
+  select estado::text into t from viajes where id = vj; raise notice '56d viaje reabierto: %', case when t = 'abierto' then 'OK' else 'FALLA' end;
+  select count(*) into n from reaperturas_viaje where viaje_id = vj and usuario_id = '00000000-0000-0000-0000-0000000000a3';
+  raise notice '56e reapertura registrada (esperado 1): %', n;
+  select nota into t from bitacora where viaje_id = vj and accion = 'reapertura';
+  raise notice '56f motivo en la bitácora: %', case when t = 'Corregir tarifa del cliente' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  begin update viajes set estado = 'cerrado' where id = vj; update viajes set estado = 'abierto' where id = vj;
+    raise notice '56g FALLA: se reabrió sin reabrir_viaje';
+  exception when raise_exception then raise notice '56g OK: solo reabrir_viaje() reabre'; end;
+
+  -- 57. Km sin viaje: requiere explicación
+  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, odometro_anterior, km_sin_viaje)
+      values (e, u, o, now(), 9600, 35);
+    raise notice '57 FALLA: km sin viaje sin explicación';
+  exception when check_violation then raise notice '57 OK: km sin viaje piden explicación'; end;
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje)
+    values (e, u, o, now(), 9600, 35, 'Fue al taller') returning id into vj2;
+  raise notice '57b OK: km sin viaje con explicación';
+
+  -- 57c. guardar_viaje(): viaje y tramos en un paso; captura puede, en viajes abiertos
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  vj2 := guardar_viaje(null,
+    jsonb_build_object('empresa_id', e, 'unidad_id', u, 'operador_id', o, 'fecha_salida', now(), 'toneladas_cargadas', 30),
+    jsonb_build_array(
+      jsonb_build_object('tipo', 'vacio', 'origen', 'PUEBLO C', 'destino', 'PUEBLO D', 'odometro_inicial', 9600, 'odometro_final', 9700),
+      jsonb_build_object('tipo', 'cargado', 'origen', 'PUEBLO D', 'destino', 'PUEBLO E', 'odometro_inicial', 9700, 'odometro_final', 9950)));
+  perform guardar_viaje(vj2, jsonb_build_object('unidad_id', u, 'operador_id', o, 'fecha_salida', now(), 'toneladas_cargadas', 31),
+    jsonb_build_array(jsonb_build_object('tipo', 'cargado', 'origen', 'PUEBLO D', 'destino', 'PUEBLO E', 'odometro_inicial', 9700, 'odometro_final', 9960)));
+  select sum(km)::int into n from tramos_viaje where viaje_id = vj2;
+  raise notice '57c captura guarda viaje y tramos y los corrige (esperado 360): %', n;
+  select tolerancia_km(e)::int into n; raise notice '57d captura conoce la tolerancia de km (esperado 10): %', n;
+  begin perform guardar_viaje((select v from ctx where k='viajeCerrado'), jsonb_build_object('unidad_id', u, 'operador_id', o, 'fecha_salida', now()), '[]');
+    raise notice '57e FALLA: captura guardó un viaje cerrado';
+  exception when raise_exception then raise notice '57e OK: guardar_viaje respeta el cierre'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+
+  -- 58. Usuarios: solo el dueño ve la lista con correos
+  select count(*) into n from usuarios_de_empresa(e); raise notice '58 usuarios que ve administración (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select count(*) into n from usuarios_de_empresa(e); raise notice '58b usuarios que ve el dueño (esperado 3): %', n;
+  select factura_por::text into t from clientes where empresa_id = e limit 1;
+  raise notice '58c el cliente factura por peso cargado por defecto: %', case when t = 'cargado' then 'OK' else 'FALLA' end;
 end $$;

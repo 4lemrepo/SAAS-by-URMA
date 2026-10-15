@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
 import { leerReferencias, leerRegistro } from "@/lib/catalogos/datos";
 import { SeccionArmado } from "../../../armados/seccion";
+import { SeccionPagoOperador } from "../../../parametros/pago-operador";
 import { CATALOGOS, esClaveCatalogo, type ClaveCatalogo } from "@/lib/catalogos/definiciones";
 import { valorDeFormulario } from "@/lib/catalogos/formato";
 import { FormularioCatalogo } from "../../formulario";
@@ -48,6 +49,7 @@ async function Editar({ params }: { params: PageProps<"/catalogos/[catalogo]/[id
       </div>
       <FormularioCatalogo clave={clave} id={registro.id} iniciales={iniciales} referencias={referencias} />
       {clave === "unidades" && <SeccionArmado unidadId={registro.id} empresaId={empresa.empresaId} />}
+      {clave === "operadores" && empresa.veTarifas && <SeccionPagoOperador operadorId={registro.id} empresaId={empresa.empresaId} />}
     </>
   );
 }

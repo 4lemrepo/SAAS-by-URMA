@@ -15,6 +15,10 @@ export interface Membresia {
   empresaId: string;
   empresaNombre: string;
   rol: Rol;
+  /** Ve tarifa, ingreso, pago al operador y utilidad (dueño y administración siempre). */
+  veTarifas: boolean;
+  /** Puede reabrir viajes cerrados (dueño siempre; administración si el dueño se lo dio). */
+  puedeReabrir: boolean;
 }
 
 export interface UsuarioActual {
@@ -86,17 +90,22 @@ export async function membresiasDe(
 ): Promise<Membresia[]> {
   const { data: filas, error } = await supabase
     .from("miembros")
-    .select("empresa_id, rol, empresas(nombre)")
+    .select("empresa_id, rol, ve_tarifas, puede_reabrir_viajes, empresas(nombre)")
     .eq("usuario_id", usuarioId)
     .order("creado_en");
   // Mejor fallar que tratar un error como "sin empresa" y ofrecer crear otra.
   if (error) throw new Error("No se pudieron leer las empresas del usuario");
 
-  return (filas ?? []).map((f) => ({
-    empresaId: f.empresa_id,
-    empresaNombre: (f.empresas as unknown as { nombre: string } | null)?.nombre ?? "",
-    rol: f.rol as Rol,
-  }));
+  return (filas ?? []).map((f) => {
+    const rol = f.rol as Rol;
+    return {
+      empresaId: f.empresa_id,
+      empresaNombre: (f.empresas as unknown as { nombre: string } | null)?.nombre ?? "",
+      rol,
+      veTarifas: rol === "dueno" || rol === "administracion" || f.ve_tarifas === true,
+      puedeReabrir: rol === "dueno" || (rol === "administracion" && f.puede_reabrir_viajes === true),
+    };
+  });
 }
 
 /** Para el tablero y demás pantallas internas: sin empresa, al alta. */

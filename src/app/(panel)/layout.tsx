@@ -9,9 +9,14 @@ export default function LayoutPanel({ children }: LayoutProps<"/">) {
     <>
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/tablero" className="font-semibold">
-            Control Diésel
-          </Link>
+          <nav className="flex items-center gap-4">
+            <Link href="/tablero" className="font-semibold">
+              Control Diésel
+            </Link>
+            <Link href="/viajes" className="text-sm text-zinc-600 hover:underline dark:text-zinc-400">
+              Viajes
+            </Link>
+          </nav>
           {/* Con Cache Components, lo que lee la sesión va dentro de Suspense. */}
           <Suspense fallback={null}>
             <Usuario />
