@@ -34,8 +34,13 @@ Next.js (App Router, TypeScript, Tailwind) · Supabase (Postgres + Auth + Storag
   en código que corra con datos del usuario. Toda tabla nueva necesita políticas y una prueba en
   `supabase/pruebas/10_rls.sql`.
 - **Migraciones:** nunca editar una migración ya aplicada; crear una nueva en `supabase/migrations/`.
-- **Conciliación:** la lógica vive en `src/lib/conciliacion/` como funciones puras con pruebas.
-  Cualquier cambio de fórmula requiere prueba que lo cubra. No duplicar la lógica en SQL ni en componentes.
+- **Conciliación y KPIs:** la lógica vive en funciones puras con pruebas: `src/lib/conciliacion/`,
+  `src/lib/viajes/calculos.ts` (flete, pago al operador, utilidad, merma), `src/lib/costos/`
+  (asignación de costos) y `src/lib/kpis/` (tablero). Cualquier cambio de fórmula requiere prueba que
+  lo cubra. No duplicar la lógica en SQL ni en componentes.
+- **Tarifas e ingresos:** solo en `viajes_finanzas` y `pago_operador_config`, protegidas por
+  `ve_tarifas()`. Nunca devolver tarifa, ingreso, pago o utilidad a quien no tiene el permiso.
+- **Nada se borra:** se desactiva o se cancela, y queda en la `bitacora`.
 - **Parámetros:** tolerancia, precio del diésel y rendimientos son datos de cada empresa, nunca constantes en código.
 - Antes de cada commit: `npm test`, `npm run typecheck`, `npm run lint`, y si tocaste SQL,
   `supabase/pruebas/correr.sh`.

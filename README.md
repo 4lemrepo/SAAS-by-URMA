@@ -21,7 +21,8 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 | Viajes: tramos, cargas, gastos, tarifa, pago al operador, cierre, bitácora y exportación | `src/app/(panel)/viajes/`, `src/lib/viajes/` | Listo |
 | Usuarios (permisos; invitaciones después) | `src/app/(panel)/usuarios/` | Permisos listos |
 | Costos de equipo y generales | `src/app/(panel)/costos/`, `src/lib/costos/` | Listo |
-| Tablero de KPIs | — | Siguiente |
+| Tablero de KPIs con comparación, rankings, alertas, tendencia y exportación | `src/app/(panel)/tablero/`, `src/lib/kpis/` | Listo |
+| Usuarios con invitación por correo | — | Siguiente |
 | Viajes, cargas con foto y validación, conciliación en el tablero | — | Pendiente |
 
 ## Cómo correrlo
@@ -178,6 +179,22 @@ y las pruebas de RLS contra un Postgres 16 desechable (`.github/workflows/ci.yml
 - `npm test` — conciliación
 - `npm run typecheck` y `npm run lint`
 - `supabase/pruebas/correr.sh` — seguridad entre empresas y roles (requiere un Postgres local)
+
+## Tablero de KPIs
+
+Para dueño y administración (captura no lo ve). Filtros por meses, unidad, operador, cliente y ruta;
+compara contra el periodo anterior del mismo largo. Por defecto solo cuenta viajes cerrados, en el
+mes de su salida. Cada indicador muestra su fórmula (`src/lib/kpis/indicadores.ts`) y todas son
+funciones puras con pruebas (`src/lib/kpis/`).
+
+- **Costo variable** = diésel + gastos del viaje + pago al operador. **Costo total** = variable +
+  costos de equipo + generales prorrateados + equipo sin asignar. **Utilidad** = ingreso − costo total.
+- **Margen %** = utilidad ÷ ingreso; **utilidad sobre costo %** = utilidad ÷ costo (en el Excel
+  anterior ambos se llamaban "% ROI").
+- Con filtro de operador, cliente o ruta se muestra la contribución (sin costos fijos).
+- Validación con el Excel de 2026: por viaje, el pago al operador (12.6 % del subtotal) y el costo
+  coinciden al centavo; el costo variable/km de todo el año da 35.01 (el Excel da 34.76 porque su
+  columna "Km totales" no siempre es km vacío + km cargado).
 
 ## Cómo funciona la conciliación
 

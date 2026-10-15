@@ -114,13 +114,33 @@ export interface FiltrosViajes {
 const COLUMNAS_VIAJE =
   "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, creado_en";
 
-/** Consulta por lotes de ids: una URL con cientos de ids no cabe en una petición. */
-async function porLotes<T>(ids: string[], consulta: (lote: string[]) => PromiseLike<{ data: T[] | null; error: unknown }>) {
+/**
+ * Consulta por lotes de ids: una URL con cientos de ids no cabe en una
+ * petición. Cada lote se pagina (Supabase devuelve máximo 1,000 filas).
+ */
+async function porLotes<T>(
+  ids: string[],
+  consulta: (lote: string[]) => { range: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: unknown }> },
+) {
   const resultado: T[] = [];
-  for (let i = 0; i < ids.length; i += 100) {
-    const { data, error } = await consulta(ids.slice(i, i + 100));
-    if (error) throw new Error("No se pudieron leer los viajes");
+  for (let i = 0; i < ids.length; i += 50) {
+    const lote = ids.slice(i, i + 50);
+    resultado.push(...(await paginar<T>((desde, hasta) => consulta(lote).range(desde, hasta))));
+  }
+  return resultado;
+}
+
+/** Lee todas las filas de una consulta, de 1,000 en 1,000 (el máximo de Supabase por petición). */
+export async function paginar<T>(
+  consulta: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  tope = 50_000,
+): Promise<T[]> {
+  const resultado: T[] = [];
+  for (let i = 0; i < tope; i += 1000) {
+    const { data, error } = await consulta(i, i + 999);
+    if (error) throw new Error("No se pudieron leer los datos");
     resultado.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
   }
   return resultado;
 }
@@ -136,17 +156,19 @@ export async function leerViajes(
   supabase?: ClienteSupabase,
 ): Promise<ViajeCompleto[]> {
   const db = supabase ?? (await crearClienteServidor());
-  let q = db.from("viajes").select(COLUMNAS_VIAJE).eq("empresa_id", empresaId);
-  if (filtros.desde) q = q.gte("fecha_salida", `${filtros.desde}T00:00:00${ZONA}`);
-  if (filtros.hasta) q = q.lte("fecha_salida", `${filtros.hasta}T23:59:59.999${ZONA}`);
-  if (filtros.unidad) q = q.eq("unidad_id", filtros.unidad);
-  if (filtros.operador) q = q.eq("operador_id", filtros.operador);
-  if (filtros.cliente) q = q.eq("cliente_id", filtros.cliente);
-  if (filtros.estado) q = q.eq("estado", filtros.estado);
-  if (filtros.ids) q = q.in("id", filtros.ids);
-  const { data, error } = await q.order("fecha_salida", { ascending: false }).limit(2000);
-  if (error) throw new Error("No se pudieron leer los viajes");
-  const viajes = (data ?? []) as unknown as Viaje[];
+  // El constructor de Supabase se modifica en cada llamada: uno nuevo por página.
+  const consulta = () => {
+    let q = db.from("viajes").select(COLUMNAS_VIAJE).eq("empresa_id", empresaId);
+    if (filtros.desde) q = q.gte("fecha_salida", `${filtros.desde}T00:00:00${ZONA}`);
+    if (filtros.hasta) q = q.lte("fecha_salida", `${filtros.hasta}T23:59:59.999${ZONA}`);
+    if (filtros.unidad) q = q.eq("unidad_id", filtros.unidad);
+    if (filtros.operador) q = q.eq("operador_id", filtros.operador);
+    if (filtros.cliente) q = q.eq("cliente_id", filtros.cliente);
+    if (filtros.estado) q = q.eq("estado", filtros.estado);
+    if (filtros.ids) q = q.in("id", filtros.ids);
+    return q.order("fecha_salida", { ascending: false }).order("id");
+  };
+  const viajes = (await paginar((desde, hasta) => consulta().range(desde, hasta))) as unknown as Viaje[];
   if (!viajes.length) return [];
   const ids = viajes.map((v) => v.id);
 

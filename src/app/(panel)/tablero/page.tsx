@@ -4,24 +4,33 @@ import { Suspense } from "react";
 import { puede } from "@/lib/auth/permisos";
 import { usuarioConEmpresa } from "@/lib/auth/sesion";
 import { CATALOGOS, CLAVES_CATALOGO } from "@/lib/catalogos/definiciones";
+import { Indicadores } from "./indicadores";
 
 export const metadata: Metadata = { title: "Tablero · Control Diésel" };
 
-export default function PaginaTablero() {
+export default function PaginaTablero({ searchParams }: PageProps<"/tablero">) {
   return (
     <Suspense fallback={<p className="text-zinc-500">Cargando…</p>}>
-      <Tablero />
+      <Tablero searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Tablero() {
+async function Tablero({ searchParams }: { searchParams: PageProps<"/tablero">["searchParams"] }) {
   const { empresa } = await usuarioConEmpresa();
+  const verKpis = puede(empresa.rol, "verConciliacion");
   const editaCatalogos = puede(empresa.rol, "editarCatalogos");
 
   return (
     <>
       <h1 className="text-2xl font-semibold">{empresa.empresaNombre}</h1>
+
+      {/* Captura no ve el tablero de pesos. */}
+      {verKpis && (
+        <Suspense fallback={<p className="text-zinc-500">Calculando indicadores…</p>}>
+          <Indicadores empresaId={empresa.empresaId} parametros={await searchParams} />
+        </Suspense>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium tracking-wide text-zinc-500 uppercase">Operación</h2>
