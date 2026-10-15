@@ -33,8 +33,9 @@ describe("puedeRevisarCarga", () => {
     expect(puedeRevisarCarga("administracion", "u-admin", pendiente)).toBe(true);
     expect(puedeRevisarCarga("dueno", "u-dueno", pendiente)).toBe(true);
   });
-  it("nadie revisa lo que capturó, ni el dueño", () => {
-    expect(puedeRevisarCarga("dueno", "u-dueno", { ...pendiente, capturadoPor: "u-dueno" })).toBe(false);
+  it("administración no revisa lo que capturó; el dueño sí (autovalidada)", () => {
+    expect(puedeRevisarCarga("administracion", "u-admin", { ...pendiente, capturadoPor: "u-admin" })).toBe(false);
+    expect(puedeRevisarCarga("dueno", "u-dueno", { ...pendiente, capturadoPor: "u-dueno" })).toBe(true);
   });
   it("captura no revisa; una carga ya revisada no se vuelve a revisar", () => {
     expect(puedeRevisarCarga("captura", "otro", pendiente)).toBe(false);

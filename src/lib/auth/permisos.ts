@@ -39,11 +39,15 @@ export function puede(rol: Rol, permiso: Permiso): boolean {
   return PERMISOS[rol]?.includes(permiso) ?? false;
 }
 
-/** Validar o rechazar una carga: rol con permiso, carga pendiente y que no la haya capturado él. */
+/**
+ * Validar o rechazar una carga: rol con permiso y carga pendiente. Nadie revisa
+ * lo que capturó, salvo el dueño (la carga queda marcada como autovalidada).
+ */
 export function puedeRevisarCarga(
   rol: Rol,
   usuarioId: string,
   carga: { capturadoPor: string | null; estado: "pendiente" | "validada" | "rechazada" },
 ): boolean {
-  return puede(rol, "validarCargas") && carga.estado === "pendiente" && carga.capturadoPor !== usuarioId;
+  if (!puede(rol, "validarCargas") || carga.estado !== "pendiente") return false;
+  return carga.capturadoPor !== usuarioId || rol === "dueno";
 }

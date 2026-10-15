@@ -25,9 +25,9 @@ export async function guardarParametros(_: EstadoParametros, form: FormData): Pr
   if (!v.ok) return { errores: v.errores, valores };
 
   const { data, error } = await sesion.supabase
-    .from("empresas")
+    .from("parametros_empresa")
     .update(v.datos)
-    .eq("id", sesion.empresa.empresaId)
+    .eq("empresa_id", sesion.empresa.empresaId)
     .select("id");
   if (error || !data?.length) return { mensaje: "No se pudieron guardar los parámetros. Intenta de nuevo.", valores };
   return { exito: true, mensaje: "Parámetros guardados.", valores };

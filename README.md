@@ -33,6 +33,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    5. `supabase/migrations/20261015000200_rol_captura.sql`
    6. `supabase/migrations/20261015000300_catalogos.sql`
    7. `supabase/migrations/20261016000000_remolques_armados.sql`
+   8. `supabase/migrations/20261016000100_autovalidacion_parametros.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
@@ -77,8 +78,10 @@ cada viaje y medir su rendimiento. Los usuarios son:
 | Administración | Catálogos, viajes, cargas, validar cargas, tablero y conciliación | Administrar usuarios ni parámetros |
 | Captura | Dar de alta viajes y cargas con foto del ticket o del medidor, desde computadora o celular; consultar catálogos | Editar catálogos o parámetros, validar cargas, ver cargas de otros, tablero de pesos y conciliación |
 
-Toda carga nace **pendiente**; la valida o rechaza dueño o administración, nunca quien la capturó
-(ni siquiera el dueño). La base de datos lo impone, no solo la pantalla.
+Toda carga nace **pendiente**; la valida o rechaza dueño o administración. Administración y captura
+nunca revisan lo que ellos capturaron; el dueño sí puede, y la carga queda marcada como
+**autovalidada**. Los parámetros (tolerancia y precio) están en una tabla que captura no puede leer.
+La base de datos lo impone, no solo la pantalla.
 
 ## Antes del primer cliente externo: SMTP propio
 

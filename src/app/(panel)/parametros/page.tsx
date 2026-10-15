@@ -29,9 +29,9 @@ async function Contenido() {
   const { empresa } = await usuarioConPermiso("editarParametros");
   const supabase = await crearClienteServidor();
   const { data, error } = await supabase
-    .from("empresas")
+    .from("parametros_empresa")
     .select("tolerancia_pct, precio_diesel_litro")
-    .eq("id", empresa.empresaId)
+    .eq("empresa_id", empresa.empresaId)
     .single();
   if (error) throw new Error("No se pudieron leer los parámetros");
   return (

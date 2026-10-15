@@ -189,7 +189,7 @@ end $$;
 do $$
 declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
   f uuid := (select v from ctx where k='fA'); v_abierto uuid := (select v from ctx where k='viajeAbierto');
-  u uuid; viaje_cap uuid; carga_dueno uuid; carga_cap uuid;
+  u uuid; viaje_cap uuid; carga_dueno uuid; carga_dueno2 uuid; carga_admin uuid; carga_cap uuid;
 begin
   -- 20. El rol operador y miembros.operador_id ya no existen
   select count(*) into n from pg_enum where enumtypid = 'rol_miembro'::regtype and enumlabel = 'operador';
@@ -209,15 +209,21 @@ begin
   update operadores set nombre = 'X'; get diagnostics n = row_count;
   raise notice '21d operadores que captura editó (esperado 0): %', n;
 
-  -- 22. Parámetros (tolerancia, precio): solo el dueño
-  update empresas set tolerancia_pct = 50; get diagnostics n = row_count;
-  raise notice '22 parámetros que captura editó (esperado 0): %', n;
+  -- 22. Parámetros (tolerancia, precio): captura ni los ve, administración los ve, solo el dueño los cambia
+  select count(*) into n from parametros_empresa; raise notice '22 parámetros que ve captura (esperado 0): %', n;
+  update parametros_empresa set tolerancia_pct = 50; get diagnostics n = row_count;
+  raise notice '22a parámetros que captura editó (esperado 0): %', n;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
-  update empresas set tolerancia_pct = 50; get diagnostics n = row_count;
-  raise notice '22b parámetros que administración editó (esperado 0): %', n;
+  select count(*) into n from parametros_empresa; raise notice '22b parámetros que ve administración (esperado 1): %', n;
+  update parametros_empresa set tolerancia_pct = 50; get diagnostics n = row_count;
+  raise notice '22c parámetros que administración editó (esperado 0): %', n;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
-  update empresas set tolerancia_pct = 7, precio_diesel_litro = 24.5 where id = e; get diagnostics n = row_count;
-  raise notice '22c parámetros que el dueño editó (esperado 1): %', n;
+  update parametros_empresa set tolerancia_pct = 7, precio_diesel_litro = 24.5 where empresa_id = e; get diagnostics n = row_count;
+  raise notice '22d parámetros que el dueño editó (esperado 1): %', n;
+  select count(*) into n from information_schema.columns where table_name = 'empresas' and column_name in ('tolerancia_pct', 'precio_diesel_litro');
+  raise notice '22e parámetros que quedan en empresas (esperado 0): %', n;
+  begin delete from parametros_empresa where empresa_id = e; get diagnostics n = row_count;
+    raise notice '22f parámetros que el dueño borró (esperado 0): %', n; end;
 
   -- 23. Administración edita catálogos pero no administra usuarios
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
@@ -265,23 +271,34 @@ begin
   raise notice '26c cargas ajenas que captura editó (esperado 0): %', n;
   select id into carga_cap from cargas_diesel where capturado_por = auth.uid() limit 1;
 
-  -- 27. Quien capturó nunca valida; otra persona de dueño/administración sí
-  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
-  begin update cargas_diesel set estado = 'validada' where id = carga_dueno;
-    raise notice '27 FALLA: el dueño validó su propia carga';
-  exception when raise_exception then raise notice '27 OK: el dueño no valida lo que capturó'; end;
-  begin update cargas_diesel set estado = 'rechazada' where id = carga_dueno;
-    raise notice '27b FALLA: el dueño rechazó su propia carga';
-  exception when raise_exception then raise notice '27b OK: el dueño no rechaza lo que capturó'; end;
+  -- 27. Administración y captura no revisan lo que capturaron; el dueño sí (queda autovalidada)
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  insert into cargas_diesel (empresa_id, unidad_id, operador_id, fuente_id, litros)
+    values (e,u,o,f,150) returning id into carga_admin;
+  begin update cargas_diesel set estado = 'validada' where id = carga_admin;
+    raise notice '27 FALLA: administración validó su propia carga';
+  exception when raise_exception then raise notice '27 OK: administración no valida lo que capturó'; end;
+  begin update cargas_diesel set estado = 'rechazada' where id = carga_admin;
+    raise notice '27a FALLA: administración rechazó su propia carga';
+  exception when raise_exception then raise notice '27a OK: administración no rechaza lo que capturó'; end;
   update cargas_diesel set estado = 'validada' where id = carga_dueno; get diagnostics n = row_count;
-  raise notice '27c cargas del dueño validadas por administración (esperado 1): %', n;
-  select validado_por::text into t from cargas_diesel where id = carga_dueno;
-  raise notice '27d validado_por es administración: %', case when t = '00000000-0000-0000-0000-0000000000a3' then 'OK' else 'FALLA' end;
+  raise notice '27b cargas del dueño validadas por administración (esperado 1): %', n;
+  select validado_por::text || '/' || autovalidada into t from cargas_diesel where id = carga_dueno;
+  raise notice '27c validada por administración, no autovalidada: %', case when t = '00000000-0000-0000-0000-0000000000a3/false' then 'OK' else 'FALLA ' || t end;
+
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  insert into cargas_diesel (empresa_id, unidad_id, operador_id, fuente_id, litros)
+    values (e,u,o,f,120) returning id into carga_dueno2;
+  update cargas_diesel set estado = 'validada', autovalidada = false where id = carga_dueno2; get diagnostics n = row_count;
+  raise notice '27d cargas propias que el dueño validó (esperado 1): %', n;
+  select autovalidada::text into t from cargas_diesel where id = carga_dueno2;
+  raise notice '27e la carga del dueño queda autovalidada (aunque intente ocultarlo): %', case when t = 'true' then 'OK' else 'FALLA' end;
+  update cargas_diesel set estado = 'validada' where id = carga_admin;
+  select autovalidada::text into t from cargas_diesel where id = carga_admin;
+  raise notice '27f el dueño valida la de administración, no autovalidada: %', case when t = 'false' then 'OK' else 'FALLA' end;
   update cargas_diesel set estado = 'validada', validado_por = '00000000-0000-0000-0000-0000000000a3' where id = carga_cap;
   select validado_por::text into t from cargas_diesel where id = carga_cap;
-  raise notice '27e el dueño valida la carga de captura y no puede falsear quién: %', case when t = '00000000-0000-0000-0000-0000000000a1' then 'OK' else 'FALLA' end;
+  raise notice '27g el dueño valida la carga de captura y no puede falsear quién: %', case when t = '00000000-0000-0000-0000-0000000000a1' then 'OK' else 'FALLA' end;
 
   -- 28. Una carga ya validada queda fuera del alcance de captura
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
@@ -360,6 +377,7 @@ begin
   select count(*) into n from tipos_remolque; raise notice '34 tipos precargados en A (esperado 8): %', n;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
   select count(*) into n from tipos_remolque; raise notice '34b tipos precargados en empresa nueva (esperado 8): %', n;
+  select count(*) into n from parametros_empresa where tolerancia_pct = 5; raise notice '34c empresa nueva con parámetros por defecto (esperado 1): %', n;
 
   -- 35. Administración agrega tipos; sin duplicados
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);

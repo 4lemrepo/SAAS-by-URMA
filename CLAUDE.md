@@ -20,8 +20,9 @@ manejó cada viaje y medir su rendimiento. Los usuarios (`miembros.rol`) son:
 - `administracion`: catálogos, viajes, cargas, validar cargas, tablero y conciliación. No administra usuarios ni parámetros.
 - `captura`: da de alta viajes y cargas con foto; consulta catálogos. No edita catálogos ni
   parámetros, no valida cargas, no ve el tablero de pesos ni la conciliación.
-Toda carga nace `pendiente`; la valida o rechaza dueño o administración, nunca quien la capturó
-(lo impone un trigger en la base). Los permisos de pantalla viven en `src/lib/auth/permisos.ts`.
+Toda carga nace `pendiente`; la valida o rechaza dueño o administración. Administración y captura
+nunca revisan lo que ellos capturaron; el dueño sí, y la carga queda `autovalidada` (lo impone un
+trigger en la base). Tolerancia y precio del diésel viven en `parametros_empresa`, que captura no lee. Los permisos de pantalla viven en `src/lib/auth/permisos.ts`.
 
 ## Stack
 Next.js (App Router, TypeScript, Tailwind) · Supabase (Postgres + Auth + Storage) · Vercel · Vitest.
