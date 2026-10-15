@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { reenviarCodigo, verificarCodigo } from "./acciones";
 import { Aviso, BotonEnviar, Campo } from "./campos";
@@ -47,8 +48,35 @@ export function ConfirmarConCodigo({ correo: correoConocido }: { correo?: string
         />
         <BotonEnviar pendiente="Confirmando…">Confirmar cuenta</BotonEnviar>
       </form>
+      <SiLlegoEnlace />
       <ReenviarCodigo correo={correo} />
     </div>
+  );
+}
+
+/**
+ * Mientras no haya SMTP propio, la plantilla de Supabase no se puede editar y el
+ * correo trae un enlace en lugar del código. Abrirlo confirma la cuenta igual.
+ */
+function SiLlegoEnlace() {
+  return (
+    <details className="rounded-md bg-zinc-50 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-300">
+      <summary className="cursor-pointer font-medium">¿Tu correo trae un enlace y no un código?</summary>
+      <ol className="mt-2 list-decimal space-y-1 pl-5">
+        <li>
+          Abre el enlace <strong>&ldquo;Confirm your mail&rdquo;</strong> del correo (de preferencia en este mismo
+          navegador). Eso confirma tu cuenta.
+        </li>
+        <li>
+          Si la página que se abre no te deja dentro, no pasa nada: regresa a{" "}
+          <Link href="/login" className="font-medium underline">
+            Entrar
+          </Link>{" "}
+          con tu correo y contraseña.
+        </li>
+        <li>Si el enlace dice que expiró o ya se usó, pide otro correo con el botón de abajo.</li>
+      </ol>
+    </details>
   );
 }
 

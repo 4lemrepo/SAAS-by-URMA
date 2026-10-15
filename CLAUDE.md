@@ -7,11 +7,21 @@ Primer cliente: URMA Logística. Luego se comercializa a otros transportistas.
 Documento de producto: https://claude.ai/code/artifact/e2bffefb-b3d4-4377-a568-83c189371777
 
 ## Alcance del MVP (no construir nada fuera de esto sin que Alan lo pida)
-Catálogos, viajes, cargas de diésel (app del operador con foto de ticket y captura sin señal),
-conciliación real vs teórico con semáforo, inventario de tanque propio, tablero, alertas,
-multiempresa y roles, exportación a Excel.
+Catálogos, viajes, cargas de diésel (con foto del ticket o del medidor del tanque, desde
+computadora o celular, y validación), conciliación real vs teórico con semáforo, inventario de
+tanque propio, tablero, alertas, multiempresa y roles, exportación a Excel.
 **Fuera del MVP:** liquidaciones, mantenimiento, llantas, Carta Porte (irá vía API de un PAC),
-GPS/telemetría, facturación y cobranza.
+GPS/telemetría, facturación y cobranza, captura sin señal (offline).
+
+## Roles
+El operador (chofer) **no es usuario**: es un registro del catálogo `operadores` para saber quién
+manejó cada viaje y medir su rendimiento. Los usuarios (`miembros.rol`) son:
+- `dueno`: todo (usuarios, parámetros, catálogos, viajes, cargas, tablero y conciliación).
+- `administracion`: catálogos, viajes, cargas, validar cargas, tablero y conciliación. No administra usuarios ni parámetros.
+- `captura`: da de alta viajes y cargas con foto; consulta catálogos. No edita catálogos ni
+  parámetros, no valida cargas, no ve el tablero de pesos ni la conciliación.
+Toda carga nace `pendiente`; la valida o rechaza dueño o administración, nunca quien la capturó
+(lo impone un trigger en la base). Los permisos de pantalla viven en `src/lib/auth/permisos.ts`.
 
 ## Stack
 Next.js (App Router, TypeScript, Tailwind) · Supabase (Postgres + Auth + Storage) · Vercel · Vitest.

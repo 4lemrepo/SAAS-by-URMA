@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { cerrarSesion } from "@/app/(acceso)/acciones";
+import { NOMBRE_ROL } from "@/lib/auth/permisos";
 import { usuarioConEmpresa } from "@/lib/auth/sesion";
 
 export const metadata: Metadata = { title: "Tablero · Control Diésel" };
-
-const NOMBRE_ROL = { dueno: "Dueño", administracion: "Administración", operador: "Operador" } as const;
 
 export default function PaginaTablero() {
   return (

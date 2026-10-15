@@ -11,11 +11,12 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 
 | Parte | Dónde | Estado |
 | --- | --- | --- |
-| Esquema de base de datos multiempresa con seguridad por empresa (RLS) | `supabase/migrations/` | Listo, con 23 pruebas de acceso |
+| Esquema de base de datos multiempresa con seguridad por empresa (RLS) | `supabase/migrations/` | Listo, con pruebas de acceso por empresa y por rol |
 | Lógica de conciliación: litros teóricos, semáforo, pesos faltantes, cuadre de tanque | `src/lib/conciliacion/` | Lista, con 15 pruebas |
 | Conexión a Supabase (navegador, servidor y proxy de sesión) | `src/lib/supabase/`, `src/proxy.ts` | Lista |
 | Login, registro, confirmación de correo y alta de empresa | `src/app/(acceso)/`, `src/app/auth/` | Listo |
-| Catálogos, viajes, app del operador, tablero | — | Siguiente |
+| Roles: dueño, administración y captura | `src/lib/auth/permisos.ts` | Listo |
+| Catálogos, viajes, cargas con foto y validación, tablero | — | Siguiente |
 
 ## Cómo correrlo
 
@@ -27,6 +28,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    2. `supabase/migrations/20261014000100_endurecer_seguridad.sql`
    3. `supabase/migrations/20261015000000_exigir_correo_confirmado.sql`
    4. `supabase/migrations/20261015000100_una_empresa_por_cuenta.sql`
+   5. `supabase/migrations/20261015000200_rol_captura.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
@@ -37,9 +39,14 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    *Email OTP Length* sea `6` (la expiración, *Email OTP Expiration*, viene en 3600 s = 1 hora).
    Si la confirmación está apagada, Supabase da por confirmado cualquier correo sin mandar nada,
    y la app no deja entrar a nadie (lo avisa en el login).
-7. **Auth → Emails → Templates → Confirm signup:** la cuenta se confirma con un **código de 6
-   dígitos**, no con enlace (los filtros de seguridad del correo corporativo abren los enlaces y
-   los gastan antes que el usuario). Reemplaza la plantilla por esta y guarda:
+7. **Auth → Emails → Templates → Confirm signup:** la app está hecha para confirmar con un
+   **código de 6 dígitos**, no con enlace (los filtros de seguridad del correo corporativo abren
+   los enlaces y los gastan antes que el usuario).
+
+   > **Por ahora (sin SMTP propio)** Supabase no deja editar la plantilla, así que el correo trae
+   > un enlace. Abrirlo confirma la cuenta; después se entra con correo y contraseña. La pantalla
+   > del código lo explica en "¿Tu correo trae un enlace y no un código?". Cuando configures SMTP
+   > (sección siguiente), cambia la plantilla por esta y guarda:
 
    - *Subject:* `Tu código para Control Diésel: {{ .Token }}`
    - *Body:*
@@ -55,11 +62,25 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 8. `npm run dev` y abre http://localhost:3000 → *Crear cuenta* → escribe el código que llegó →
    da de alta la empresa → tablero. Si no llega: *Reenviar código* (o *Tengo un código* en el login).
 
+## Roles
+
+El operador (chofer) **no entra al sistema**: es un registro del catálogo para saber quién manejó
+cada viaje y medir su rendimiento. Los usuarios son:
+
+| Rol | Puede | No puede |
+| --- | --- | --- |
+| Dueño | Todo: usuarios, parámetros (tolerancia y precio del diésel), catálogos, viajes, cargas, validar, tablero y conciliación | — |
+| Administración | Catálogos, viajes, cargas, validar cargas, tablero y conciliación | Administrar usuarios ni parámetros |
+| Captura | Dar de alta viajes y cargas con foto del ticket o del medidor, desde computadora o celular; consultar catálogos | Editar catálogos o parámetros, validar cargas, ver cargas de otros, tablero de pesos y conciliación |
+
+Toda carga nace **pendiente**; la valida o rechaza dueño o administración, nunca quien la capturó
+(ni siquiera el dueño). La base de datos lo impone, no solo la pantalla.
+
 ## Antes del primer cliente externo: SMTP propio
 
 El correo que trae Supabase es solo para pruebas: manda muy pocos correos por hora (Authentication
 → Rate Limits lo muestra) y puede negarse a enviar a direcciones que no sean del equipo del proyecto.
-Con eso, los operadores y clientes no recibirían su correo de confirmación.
+Con eso, tus usuarios (administración y captura) y otras empresas no recibirían su correo de confirmación.
 
 1. Elige un proveedor de correo transaccional (Resend, Postmark, Amazon SES, SendGrid…) y
    **verifica el dominio** desde el que vas a enviar (p. ej. `notificaciones@tudominio.mx`):

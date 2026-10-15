@@ -6,8 +6,9 @@ import type { User } from "@supabase/supabase-js";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { destinoInicial, motivoBloqueo, type MotivoBloqueo } from "./acceso";
+import type { Rol } from "./permisos";
 
-export type Rol = "dueno" | "administracion" | "operador";
+export type { Rol };
 
 export interface Membresia {
   empresaId: string;
