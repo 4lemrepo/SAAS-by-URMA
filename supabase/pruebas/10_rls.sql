@@ -349,3 +349,133 @@ begin
     raise notice '33b FALLA: captura dio de alta una ruta';
   exception when insufficient_privilege then raise notice '33b OK: captura no da de alta rutas'; end;
 end $$;
+
+-- ---------- Remolques, dollies y armados (migración 20261016000000) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  u uuid; u2 uuid; tolva uuid; r1 uuid; r2 uuid; r3 uuid; d1 uuid; d2 uuid; a uuid; a_otra uuid;
+begin
+  -- 34. Tipos de remolque precargados, también en empresas nuevas
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select count(*) into n from tipos_remolque; raise notice '34 tipos precargados en A (esperado 8): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  select count(*) into n from tipos_remolque; raise notice '34b tipos precargados en empresa nueva (esperado 8): %', n;
+
+  -- 35. Administración agrega tipos; sin duplicados
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  insert into tipos_remolque (empresa_id, nombre) values (e, 'Cama baja');
+  raise notice '35 OK: administración agregó un tipo de remolque';
+  begin insert into tipos_remolque (empresa_id, nombre) values (e, ' TOLVA ');
+    raise notice '35b FALLA: tipo duplicado';
+  exception when unique_violation then raise notice '35b OK: tipo duplicado rechazado'; end;
+
+  -- Dueño da de alta equipo
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select id into tolva from tipos_remolque where empresa_id = e and nombre = 'Tolva';
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into unidades (empresa_id, numero_economico, numero_serie) values (e, 'T2', '3AKJGLD5XGSGA0001') returning id into u2;
+  insert into remolques (empresa_id, placas, numero_serie, tipo_id) values (e,'10-AB-1A','SERIE-R1',tolva) returning id into r1;
+  insert into remolques (empresa_id, placas, numero_serie, tipo_id, numero_economico) values (e,'10-AB-2A','SERIE-R2',tolva,'R-02') returning id into r2;
+  insert into remolques (empresa_id, placas, numero_serie, tipo_id) values (e,'10-AB-3A','SERIE-R3',tolva) returning id into r3;
+  insert into dollies (empresa_id, numero_serie) values (e,'SERIE-D1') returning id into d1;
+  begin insert into remolques (empresa_id, placas, numero_serie, tipo_id) values (e,'10-ab-1a','OTRA',tolva);
+    raise notice '36 FALLA: placas de remolque duplicadas';
+  exception when unique_violation then raise notice '36 OK: placas de remolque duplicadas rechazadas'; end;
+  begin insert into dollies (empresa_id) values (e);
+    raise notice '36b FALLA: dolly sin número de serie';
+  exception when not_null_violation then raise notice '36b OK: dolly requiere número de serie'; end;
+
+  -- 37. Captura consulta equipo pero no lo edita ni cambia armados
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from remolques; raise notice '37 captura ve remolques (esperado 3): %', n;
+  begin insert into remolques (empresa_id, placas, numero_serie, tipo_id) values (e,'99-ZZ-9Z','CAP',tolva);
+    raise notice '37b FALLA: captura dio de alta un remolque';
+  exception when insufficient_privilege then raise notice '37b OK: captura no da de alta remolques'; end;
+  begin insert into tipos_remolque (empresa_id, nombre) values (e, 'De captura');
+    raise notice '37c FALLA: captura dio de alta un tipo';
+  exception when insufficient_privilege then raise notice '37c OK: captura no da de alta tipos'; end;
+  begin perform cambiar_armado(u, r1);
+    raise notice '37d FALLA: captura cambió un armado';
+  exception when insufficient_privilege then raise notice '37d OK: captura no cambia armados'; end;
+  update dollies set activo = false; get diagnostics n = row_count;
+  raise notice '37e dollies que captura desactivó (esperado 0): %', n;
+
+  -- 38. Armado sencillo y luego full, con historial
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  perform cambiar_armado(u, r1, null, null, now() - interval '10 days');
+  select configuracion::text into t from armados where unidad_id = u and hasta is null;
+  raise notice '38 configuración con un remolque: %', case when t = 'sencillo' then 'OK' else 'FALLA ' || coalesce(t,'null') end;
+  a := cambiar_armado(u, r1, d1, r2, now() - interval '5 days');
+  select configuracion::text into t from armados where id = a;
+  raise notice '38b configuración con dolly y dos remolques: %', case when t = 'full' then 'OK' else 'FALLA ' || coalesce(t,'null') end;
+  select count(*) into n from armados where unidad_id = u; raise notice '38c armados en el historial (esperado 2): %', n;
+  select count(*) into n from armados where unidad_id = u and hasta is null; raise notice '38d armados vigentes (esperado 1): %', n;
+  select count(*) into n from armados where unidad_id = u and now() - interval '7 days' <@ tstzrange(desde, hasta) and remolque2_id is null;
+  raise notice '38e hace 7 días traía sencillo (esperado 1): %', n;
+
+  -- 39. Un remolque o dolly no puede estar en dos tractos a la vez
+  begin perform cambiar_armado(u2, r1);
+    raise notice '39 FALLA: remolque en dos unidades';
+  exception when raise_exception then
+    if sqlerrm like '%está en la unidad 0708%' then raise notice '39 OK: remolque ya enganchado rechazado';
+    else raise notice '39 FALLA: error inesperado: %', sqlerrm; end if; end;
+  begin perform cambiar_armado(u2, r3, d1, r2);
+    raise notice '39b FALLA: dolly en dos unidades';
+  exception when raise_exception then raise notice '39b OK: dolly o remolque ya enganchado rechazado'; end;
+  -- Ni metiéndolo directo a la tabla, ni en el pasado
+  begin insert into armados (empresa_id, unidad_id, remolque1_id, desde, hasta) values (e, u2, r2, now() - interval '30 days', now() - interval '1 day');
+    raise notice '39c FALLA: empalme en el pasado';
+  exception when raise_exception then raise notice '39c OK: empalme en el pasado rechazado'; end;
+
+  -- 40. Reglas de sencillo/full
+  begin perform cambiar_armado(u2, r3, d1, null);
+    raise notice '40 FALLA: dolly sin segundo remolque';
+  exception when raise_exception then
+    if sqlerrm like 'Un full lleva dolly%' then raise notice '40 OK: full requiere dolly y segundo remolque';
+    else raise notice '40 FALLA: error inesperado: %', sqlerrm; end if; end;
+  insert into dollies (empresa_id, numero_serie) values (e,'SERIE-D2') returning id into d2;
+  begin insert into armados (empresa_id, unidad_id, remolque1_id, dolly_id) values (e, u2, r3, d2);
+    raise notice '40b FALLA: armado con dolly sin segundo remolque';
+  exception when check_violation then raise notice '40b OK: la tabla también exige el full completo'; end;
+
+  -- 41. El historial no se edita y el equipo enganchado no se desactiva
+  begin update armados set remolque1_id = r3 where id = a;
+    raise notice '41 FALLA: se editó el historial';
+  exception when raise_exception then raise notice '41 OK: historial de armados inmutable'; end;
+  begin update remolques set activo = false where id = r2;
+    raise notice '41b FALLA: se desactivó un remolque enganchado';
+  exception when raise_exception then raise notice '41b OK: remolque enganchado no se desactiva'; end;
+  delete from armados where id = a; get diagnostics n = row_count;
+  raise notice '41c armados borrados (esperado 0): %', n;
+
+  -- 42. La fecha del cambio debe ser posterior al armado vigente
+  begin perform cambiar_armado(u, r3, null, null, now() - interval '6 days');
+    raise notice '42 FALLA: cambio anterior al armado vigente';
+  exception when raise_exception then raise notice '42 OK: fecha de cambio validada'; end;
+
+  -- 43. Desenganchar libera el equipo para otro tracto
+  perform cambiar_armado(u, null);
+  select count(*) into n from armados where unidad_id = u and hasta is null; raise notice '43 armados vigentes tras desenganchar (esperado 0): %', n;
+  a_otra := cambiar_armado(u2, r1, d1, r2);
+  raise notice '43b OK: el equipo liberado se enganchó a otra unidad';
+  update remolques set activo = false where id = r3; get diagnostics n = row_count;
+  raise notice '43c remolques libres desactivados (esperado 1): %', n;
+  begin perform cambiar_armado(u, r3);
+    raise notice '43d FALLA: se enganchó un remolque inactivo';
+  exception when raise_exception then raise notice '43d OK: no se engancha equipo inactivo'; end;
+
+  -- 44. El viaje guarda un armado de su misma unidad
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, armado_id) values (e, u2, o, now(), a_otra);
+  raise notice '44 OK: viaje con su armado';
+  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, armado_id) values (e, u, o, now(), a_otra);
+    raise notice '44b FALLA: viaje con armado de otra unidad';
+  exception when foreign_key_violation then raise notice '44b OK: armado de otra unidad rechazado'; end;
+
+  -- 45. Otra empresa no ve el equipo de A
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  select count(*) into n from remolques; raise notice '45 otra empresa ve remolques (esperado 0): %', n;
+  select count(*) into n from armados; raise notice '45b otra empresa ve armados (esperado 0): %', n;
+  begin perform cambiar_armado(u, r1);
+    raise notice '45c FALLA: otra empresa cambió un armado';
+  exception when raise_exception or insufficient_privilege then raise notice '45c OK: otra empresa no cambia armados'; end;
+end $$;

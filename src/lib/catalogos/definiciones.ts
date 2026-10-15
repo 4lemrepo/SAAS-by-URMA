@@ -3,7 +3,15 @@
  * y el importador leen de aquí, así un campo se valida igual en ambos lados.
  */
 
-export type ClaveCatalogo = "unidades" | "operadores" | "clientes" | "rutas" | "fuentes";
+export type ClaveCatalogo =
+  | "unidades"
+  | "remolques"
+  | "dollies"
+  | "tipos-remolque"
+  | "operadores"
+  | "clientes"
+  | "rutas"
+  | "fuentes";
 
 interface CampoBase {
   /** Nombre de la columna en la base de datos. */
@@ -40,7 +48,19 @@ export interface CampoOpcion extends CampoBase {
   porDefecto?: string;
 }
 
-export type Campo = CampoTexto | CampoNumero | CampoOpcion;
+/** Elige un registro de otro catálogo (p. ej. el tipo de un remolque). */
+export interface CampoReferencia extends CampoBase {
+  tipo: "referencia";
+  catalogo: ClaveCatalogo;
+}
+
+export type Campo = CampoTexto | CampoNumero | CampoOpcion | CampoReferencia;
+
+/** Opción de un campo de referencia: id y cómo se muestra. */
+export interface OpcionReferencia {
+  valor: string;
+  etiqueta: string;
+}
 
 export interface DefinicionCatalogo {
   clave: ClaveCatalogo;
@@ -56,8 +76,12 @@ export interface DefinicionCatalogo {
   /** Columnas que identifican un duplicado (normalizadas sin mayúsculas ni espacios). */
   llaveUnica: readonly string[];
   mensajeDuplicado: string;
-  /** Columnas que se ven en la lista, en orden. */
+  /** Columnas que se ven en la lista, en orden (campos o columnas calculadas). */
   columnasLista: readonly string[];
+  /** Columnas calculadas que solo se muestran (p. ej. el armado actual de la unidad). */
+  calculadas?: readonly { columna: string; etiqueta: string }[];
+  /** Columna con la que otro catálogo muestra este registro en una lista de opciones. */
+  columnaEtiqueta: string;
   orden: string;
 }
 
@@ -76,11 +100,6 @@ const rendimiento = (columna: string, etiqueta: string, ayuda?: string): CampoNu
   ayuda,
 });
 
-export const OPCIONES_CONFIGURACION = [
-  { valor: "sencillo", etiqueta: "Sencillo" },
-  { valor: "full", etiqueta: "Full" },
-] as const;
-
 export const OPCIONES_TIPO_FUENTE = [
   { valor: "tanque_propio", etiqueta: "Tanque propio" },
   { valor: "estacion", etiqueta: "Estación" },
@@ -94,36 +113,91 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     titulo: "Unidades",
     singular: "unidad",
     conArticulo: "una unidad",
-    descripcion: "Tractocamiones con su rendimiento esperado.",
+    descripcion: "Tractocamiones (número económico) con su rendimiento esperado y su armado actual.",
     columnaActivo: "activa",
     campos: [
       { columna: "numero_economico", etiqueta: "Número económico", tipo: "texto", requerido: true, max: 20, mayusculas: true },
       { columna: "placas", etiqueta: "Placas", tipo: "texto", max: 15, mayusculas: true },
+      { columna: "numero_serie", etiqueta: "Número de serie / VIN", tipo: "texto", min: 3, max: 30, mayusculas: true },
       { columna: "marca", etiqueta: "Marca", tipo: "texto", max: 40 },
       { columna: "modelo", etiqueta: "Modelo", tipo: "texto", max: 40 },
       { columna: "anio", etiqueta: "Año", tipo: "numero", min: 1950, max: 2100, decimales: 0 },
-      {
-        columna: "configuracion",
-        etiqueta: "Configuración",
-        tipo: "opcion",
-        requerido: true,
-        opciones: OPCIONES_CONFIGURACION,
-        porDefecto: "full",
-      },
-      {
-        columna: "tipo_equipo",
-        etiqueta: "Tipo de equipo",
-        tipo: "texto",
-        max: 60,
-        sugerencias: ["Góndola granelera", "Jaula ganadera", "Caja seca", "Tolva", "Plataforma", "Pipa"],
-      },
       rendimiento("rend_cargado_kml", "Rendimiento cargado", "Kilómetros por litro esperados con carga"),
       rendimiento("rend_vacio_kml", "Rendimiento vacío", "Kilómetros por litro esperados sin carga"),
     ],
     llaveUnica: ["numero_economico"],
-    mensajeDuplicado: "Ya existe una unidad con ese número económico",
-    columnasLista: ["numero_economico", "placas", "marca", "configuracion", "tipo_equipo", "rend_cargado_kml", "rend_vacio_kml"],
+    mensajeDuplicado: "Ya existe una unidad con ese número económico (o ese número de serie)",
+    columnasLista: ["numero_economico", "placas", "armado", "rend_cargado_kml", "rend_vacio_kml"],
+    calculadas: [{ columna: "armado", etiqueta: "Armado actual" }],
+    columnaEtiqueta: "numero_economico",
     orden: "numero_economico",
+  },
+  remolques: {
+    clave: "remolques",
+    tabla: "remolques",
+    titulo: "Remolques",
+    singular: "remolque",
+    conArticulo: "un remolque",
+    descripcion: "Góndolas, jaulas, cajas y demás equipo que se engancha a una unidad.",
+    columnaActivo: "activo",
+    campos: [
+      { columna: "placas", etiqueta: "Placas", tipo: "texto", requerido: true, min: 5, max: 15, mayusculas: true },
+      { columna: "numero_serie", etiqueta: "Número de serie", tipo: "texto", requerido: true, min: 3, max: 30, mayusculas: true },
+      { columna: "tipo_id", etiqueta: "Tipo", tipo: "referencia", requerido: true, catalogo: "tipos-remolque" },
+      {
+        columna: "numero_economico",
+        etiqueta: "Número económico (opcional)",
+        tipo: "texto",
+        max: 20,
+        mayusculas: true,
+      },
+    ],
+    llaveUnica: ["placas"],
+    mensajeDuplicado: "Ya existe un remolque con esas placas, ese número de serie o ese número económico",
+    columnasLista: ["placas", "numero_economico", "tipo_id", "numero_serie", "enganchado"],
+    calculadas: [{ columna: "enganchado", etiqueta: "Enganchado a" }],
+    columnaEtiqueta: "placas",
+    orden: "placas",
+  },
+  dollies: {
+    clave: "dollies",
+    tabla: "dollies",
+    titulo: "Dollies",
+    singular: "dolly",
+    conArticulo: "un dolly",
+    descripcion: "Convertidores para armar un full. No llevan placa.",
+    columnaActivo: "activo",
+    campos: [
+      { columna: "numero_serie", etiqueta: "Número de serie", tipo: "texto", requerido: true, min: 3, max: 30, mayusculas: true },
+      {
+        columna: "numero_economico",
+        etiqueta: "Número económico (opcional)",
+        tipo: "texto",
+        max: 20,
+        mayusculas: true,
+      },
+    ],
+    llaveUnica: ["numero_serie"],
+    mensajeDuplicado: "Ya existe un dolly con ese número de serie o ese número económico",
+    columnasLista: ["numero_serie", "numero_economico", "enganchado"],
+    calculadas: [{ columna: "enganchado", etiqueta: "Enganchado a" }],
+    columnaEtiqueta: "numero_serie",
+    orden: "numero_serie",
+  },
+  "tipos-remolque": {
+    clave: "tipos-remolque",
+    tabla: "tipos_remolque",
+    titulo: "Tipos de remolque",
+    singular: "tipo de remolque",
+    conArticulo: "un tipo de remolque",
+    descripcion: "Góndola granelera, jaula ganadera, caja seca… Agrega los que uses.",
+    columnaActivo: "activo",
+    campos: [{ columna: "nombre", etiqueta: "Nombre", tipo: "texto", requerido: true, min: 2, max: 60 }],
+    llaveUnica: ["nombre"],
+    mensajeDuplicado: "Ya existe ese tipo de remolque",
+    columnasLista: ["nombre"],
+    columnaEtiqueta: "nombre",
+    orden: "nombre",
   },
   operadores: {
     clave: "operadores",
@@ -146,6 +220,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     llaveUnica: ["nombre"],
     mensajeDuplicado: "Ya existe un operador con ese nombre",
     columnasLista: ["nombre", "telefono"],
+    columnaEtiqueta: "nombre",
     orden: "nombre",
   },
   clientes: {
@@ -170,6 +245,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     llaveUnica: ["nombre"],
     mensajeDuplicado: "Ya existe un cliente con ese nombre",
     columnasLista: ["nombre", "rfc"],
+    columnaEtiqueta: "nombre",
     orden: "nombre",
   },
   rutas: {
@@ -201,6 +277,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     llaveUnica: ["origen", "destino"],
     mensajeDuplicado: "Ya existe una ruta con ese origen y destino",
     columnasLista: ["origen", "destino", "km", "rend_cargado_kml", "rend_vacio_kml"],
+    columnaEtiqueta: "origen",
     orden: "origen",
   },
   fuentes: {
@@ -229,6 +306,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     llaveUnica: ["nombre"],
     mensajeDuplicado: "Ya existe una fuente de diésel con ese nombre",
     columnasLista: ["nombre", "tipo", "capacidad_litros"],
+    columnaEtiqueta: "nombre",
     orden: "nombre",
   },
 };

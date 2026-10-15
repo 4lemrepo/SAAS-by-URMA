@@ -1,34 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useState, useTransition } from "react";
 import { CATALOGOS, type ClaveCatalogo } from "@/lib/catalogos/definiciones";
-import { formatearValor } from "@/lib/catalogos/formato";
-import { claveComparacion } from "@/lib/catalogos/validacion";
+import { columnasDeLista, formatearValor } from "@/lib/catalogos/formato";
+import { claveComparacion, type Referencias } from "@/lib/catalogos/validacion";
 import type { FilaCatalogo } from "@/lib/catalogos/datos";
 import { cambiarActivo } from "./acciones";
 
 export function ListaCatalogo({
   clave,
   filas,
+  referencias,
   puedeEditar,
 }: {
   clave: ClaveCatalogo;
   filas: FilaCatalogo[];
+  referencias: Referencias;
   puedeEditar: boolean;
 }) {
   const def = CATALOGOS[clave];
   const [busqueda, setBusqueda] = useState("");
   const [verInactivos, setVerInactivos] = useState(false);
-  const campos = def.columnasLista.map((c) => def.campos.find((x) => x.columna === c)!);
+  const campos = columnasDeLista(def);
+  const ver = (c: (typeof campos)[number], f: FilaCatalogo) =>
+    formatearValor(c.campo, f.valores[c.columna], referencias[c.columna]);
   const [principal, ...resto] = campos;
 
   const texto = claveComparacion(busqueda);
   const visibles = filas.filter(
     (f) =>
       (verInactivos || f.activo) &&
-      (!texto || campos.some((c) => claveComparacion(formatearValor(c, f.valores[c.columna])).includes(texto))),
+      (!texto || campos.some((c) => claveComparacion(ver(c, f)).includes(texto))),
   );
   const inactivos = filas.filter((f) => !f.activo).length;
 
@@ -66,7 +69,7 @@ export function ListaCatalogo({
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-medium">
-                    {formatearValor(principal, f.valores[principal.columna])}
+                    {ver(principal, f)}
                     {!f.activo && <Inactivo />}
                   </p>
                   {puedeEditar && <Acciones clave={clave} fila={f} />}
@@ -75,7 +78,7 @@ export function ListaCatalogo({
                   {resto.map((c) => (
                     <div key={c.columna} className="contents">
                       <dt className="text-zinc-500">{c.etiqueta}</dt>
-                      <dd>{formatearValor(c, f.valores[c.columna])}</dd>
+                      <dd>{ver(c, f)}</dd>
                     </div>
                   ))}
                 </dl>
@@ -101,7 +104,7 @@ export function ListaCatalogo({
                   <tr key={f.id} className={`border-t border-zinc-200 dark:border-zinc-800 ${f.activo ? "" : "opacity-60"}`}>
                     {campos.map((c, i) => (
                       <td key={c.columna} className={`px-3 py-2 ${i === 0 ? "font-medium" : ""}`}>
-                        {formatearValor(c, f.valores[c.columna])}
+                        {ver(c, f)}
                         {i === 0 && !f.activo && <Inactivo />}
                       </td>
                     ))}
@@ -130,23 +133,28 @@ function Inactivo() {
 }
 
 function Acciones({ clave, fila }: { clave: ClaveCatalogo; fila: FilaCatalogo }) {
+  const [pendiente, iniciar] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   return (
-    <div className="flex shrink-0 items-center justify-end gap-3 text-sm">
-      <Link href={`/catalogos/${clave}/${fila.id}`} className="font-medium underline">
-        Editar
-      </Link>
-      <form action={cambiarActivo.bind(null, clave, fila.id, !fila.activo)}>
-        <BotonActivo activo={fila.activo} />
-      </form>
+    <div className="flex shrink-0 flex-col items-end gap-1 text-sm">
+      <div className="flex items-center gap-3">
+        <Link href={`/catalogos/${clave}/${fila.id}`} className="font-medium underline">
+          {clave === "unidades" ? "Editar y armar" : "Editar"}
+        </Link>
+        <button
+          type="button"
+          disabled={pendiente}
+          onClick={() => iniciar(async () => setError(await cambiarActivo(clave, fila.id, !fila.activo)))}
+          className="text-zinc-600 underline disabled:opacity-50 dark:text-zinc-400"
+        >
+          {pendiente ? "…" : fila.activo ? "Desactivar" : "Reactivar"}
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="max-w-56 text-right text-xs text-red-600">
+          {error}
+        </p>
+      )}
     </div>
-  );
-}
-
-function BotonActivo({ activo }: { activo: boolean }) {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending} className="text-zinc-600 underline disabled:opacity-50 dark:text-zinc-400">
-      {pending ? "…" : activo ? "Desactivar" : "Reactivar"}
-    </button>
   );
 }

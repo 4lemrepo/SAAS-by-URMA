@@ -32,11 +32,10 @@ describe("validarRegistro: unidades", () => {
     const r = validarRegistro(def, {
       numero_economico: " u-0708 ",
       placas: "ab-123-cd",
+      numero_serie: "3akjgld5xgsga0001",
       marca: "Kenworth",
       modelo: "T680",
       anio: "2019",
-      configuracion: "Full",
-      tipo_equipo: "Góndola  granelera",
       rend_cargado_kml: "2,2",
       rend_vacio_kml: 3.1,
     });
@@ -45,26 +44,24 @@ describe("validarRegistro: unidades", () => {
       datos: {
         numero_economico: "U-0708",
         placas: "AB-123-CD",
+        numero_serie: "3AKJGLD5XGSGA0001",
         marca: "Kenworth",
         modelo: "T680",
         anio: 2019,
-        configuracion: "full",
-        tipo_equipo: "Góndola granelera",
         rend_cargado_kml: 2.2,
         rend_vacio_kml: 3.1,
       },
     });
   });
-  it("solo el número económico es obligatorio; la configuración toma full", () => {
+  it("solo el número económico es obligatorio", () => {
     const r = validarRegistro(def, { numero_economico: "708" });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.datos).toMatchObject({ numero_economico: "708", configuracion: "full", anio: null, rend_vacio_kml: null });
+    if (r.ok) expect(r.datos).toMatchObject({ numero_economico: "708", numero_serie: null, anio: null, rend_vacio_kml: null });
   });
   it("marca cada campo con error", () => {
     const r = validarRegistro(def, {
       numero_economico: "",
       anio: "2019.5",
-      configuracion: "doble",
       rend_cargado_kml: "0",
       rend_vacio_kml: "25",
     });
@@ -73,11 +70,38 @@ describe("validarRegistro: unidades", () => {
       expect(r.errores).toEqual({
         numero_economico: "Requerido",
         anio: "Escribe un número entero",
-        configuracion: "Usa: Sencillo, Full",
         rend_cargado_kml: "Debe ser mayor que cero",
         rend_vacio_kml: "Máximo 15 km/l",
       });
     }
+  });
+});
+
+describe("validarRegistro: remolques y dollies", () => {
+  const tipos = { tipo_id: [{ valor: "id-tolva", etiqueta: "Tolva" }, { valor: "id-gondola", etiqueta: "Góndola granelera" }] };
+  it("el tipo se elige por id (formulario) o por nombre (archivo)", () => {
+    const base = { placas: "10-ab-1a", numero_serie: "s-1" };
+    const porId = validarRegistro(CATALOGOS.remolques, { ...base, tipo_id: "id-tolva" }, tipos);
+    expect(porId.ok && porId.datos.tipo_id).toBe("id-tolva");
+    const porNombre = validarRegistro(CATALOGOS.remolques, { ...base, tipo_id: "gondola granelera" }, tipos);
+    expect(porNombre).toEqual({
+      ok: true,
+      datos: { placas: "10-AB-1A", numero_serie: "S-1", tipo_id: "id-gondola", numero_economico: null },
+    });
+  });
+  it("rechaza un tipo que no está en el catálogo y exige placas y serie", () => {
+    const r = validarRegistro(CATALOGOS.remolques, { tipo_id: "otro-id" }, tipos);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errores).toEqual({ placas: "Requerido", numero_serie: "Requerido", tipo_id: "Elige una opción de la lista" });
+    }
+  });
+  it("el dolly solo exige número de serie", () => {
+    expect(validarRegistro(CATALOGOS.dollies, { numero_serie: "d-001" })).toEqual({
+      ok: true,
+      datos: { numero_serie: "D-001", numero_economico: null },
+    });
+    expect(validarRegistro(CATALOGOS.dollies, { numero_economico: "D1" }).ok).toBe(false);
   });
 });
 

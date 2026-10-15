@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
-import { leerRegistro } from "@/lib/catalogos/datos";
+import { leerReferencias, leerRegistro } from "@/lib/catalogos/datos";
+import { SeccionArmado } from "../../../armados/seccion";
 import { CATALOGOS, esClaveCatalogo, type ClaveCatalogo } from "@/lib/catalogos/definiciones";
 import { valorDeFormulario } from "@/lib/catalogos/formato";
 import { FormularioCatalogo } from "../../formulario";
@@ -25,7 +26,10 @@ async function Editar({ params }: { params: PageProps<"/catalogos/[catalogo]/[id
   const clave: ClaveCatalogo = catalogo;
   const def = CATALOGOS[clave];
   const { empresa } = await usuarioConPermiso("editarCatalogos");
-  const registro = await leerRegistro(clave, empresa.empresaId, id);
+  const [registro, referencias] = await Promise.all([
+    leerRegistro(clave, empresa.empresaId, id),
+    leerReferencias(def, empresa.empresaId),
+  ]);
   if (!registro) notFound();
 
   const iniciales: Record<string, string> = {};
@@ -42,7 +46,8 @@ async function Editar({ params }: { params: PageProps<"/catalogos/[catalogo]/[id
           {!registro.activo && <span className="ml-2 text-base font-normal text-zinc-500">(inactivo)</span>}
         </h1>
       </div>
-      <FormularioCatalogo clave={clave} id={registro.id} iniciales={iniciales} />
+      <FormularioCatalogo clave={clave} id={registro.id} iniciales={iniciales} referencias={referencias} />
+      {clave === "unidades" && <SeccionArmado unidadId={registro.id} empresaId={empresa.empresaId} />}
     </>
   );
 }

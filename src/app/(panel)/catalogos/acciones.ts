@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { puede } from "@/lib/auth/permisos";
 import { sesionDeAccion } from "@/lib/auth/sesion";
+import { leerReferencias } from "@/lib/catalogos/datos";
 import { CATALOGOS, esClaveCatalogo } from "@/lib/catalogos/definiciones";
 import { validarRegistro, valoresDeFormulario } from "@/lib/catalogos/validacion";
 
@@ -40,7 +41,8 @@ export async function guardarRegistro(
   const sesion = await sesionEditora();
   if (!sesion) return { mensaje: "Tu rol solo puede consultar catálogos", valores };
 
-  const v = validarRegistro(def, valores);
+  const referencias = await leerReferencias(def, sesion.empresa.empresaId, sesion.supabase);
+  const v = validarRegistro(def, valores, referencias);
   if (!v.ok) return { errores: v.errores, valores };
 
   const tabla = sesion.supabase.from(def.tabla);
@@ -56,19 +58,22 @@ export async function guardarRegistro(
   // RLS no da error al editar algo ajeno: simplemente no afecta filas.
   if (!data?.length) return { mensaje: "No se encontró el registro.", valores };
 
-  redirect(`/catalogos/${clave}`);
+  // Una unidad nueva va a su pantalla para armarla de una vez.
+  redirect(clave === "unidades" && !id ? `/catalogos/unidades/${data[0].id}` : `/catalogos/${clave}`);
 }
 
 /** Desactiva o reactiva un registro. Nada con historial se borra. */
-export async function cambiarActivo(clave: string, id: string, activo: boolean): Promise<void> {
-  if (!esClaveCatalogo(clave) || !PATRON_UUID.test(id)) return;
+export async function cambiarActivo(clave: string, id: string, activo: boolean): Promise<string | null> {
+  if (!esClaveCatalogo(clave) || !PATRON_UUID.test(id)) return "Registro no válido";
   const sesion = await sesionEditora();
-  if (!sesion) return;
+  if (!sesion) return "Tu rol solo puede consultar catálogos";
   const def = CATALOGOS[clave];
-  await sesion.supabase
+  const { error } = await sesion.supabase
     .from(def.tabla)
     .update({ [def.columnaActivo]: activo })
     .eq("id", id)
     .eq("empresa_id", sesion.empresa.empresaId);
   refresh();
+  // P0001: mensaje de la base pensado para el usuario (p. ej. remolque enganchado).
+  return error ? (error.code === "P0001" ? error.message : "No se pudo cambiar. Intenta de nuevo.") : null;
 }

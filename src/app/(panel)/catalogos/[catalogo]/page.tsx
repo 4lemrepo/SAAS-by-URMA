@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { puede } from "@/lib/auth/permisos";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
-import { leerCatalogo } from "@/lib/catalogos/datos";
+import { leerCatalogo, leerReferencias } from "@/lib/catalogos/datos";
 import { CATALOGOS, CLAVES_CATALOGO, esClaveCatalogo } from "@/lib/catalogos/definiciones";
 import { ListaCatalogo } from "../lista";
 
@@ -39,7 +39,10 @@ export default async function PaginaCatalogo({ params }: PageProps<"/catalogos/[
 
 async function Contenido({ clave }: { clave: keyof typeof CATALOGOS }) {
   const { empresa } = await usuarioConPermiso("verCatalogos");
-  const filas = await leerCatalogo(clave, empresa.empresaId);
+  const [filas, referencias] = await Promise.all([
+    leerCatalogo(clave, empresa.empresaId),
+    leerReferencias(CATALOGOS[clave], empresa.empresaId),
+  ]);
   const puedeEditar = puede(empresa.rol, "editarCatalogos");
   return (
     <>
@@ -51,7 +54,7 @@ async function Contenido({ clave }: { clave: keyof typeof CATALOGOS }) {
           Agregar {CATALOGOS[clave].singular}
         </Link>
       )}
-      <ListaCatalogo clave={clave} filas={filas} puedeEditar={puedeEditar} />
+      <ListaCatalogo clave={clave} filas={filas} referencias={referencias} puedeEditar={puedeEditar} />
     </>
   );
 }

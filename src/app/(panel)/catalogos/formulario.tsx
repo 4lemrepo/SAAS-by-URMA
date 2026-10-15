@@ -4,17 +4,20 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { Aviso, BotonEnviar, Campo, Selector } from "@/components/campos";
 import { CATALOGOS, type ClaveCatalogo } from "@/lib/catalogos/definiciones";
+import type { Referencias } from "@/lib/catalogos/validacion";
 import { guardarRegistro } from "./acciones";
 
 export function FormularioCatalogo({
   clave,
   id,
   iniciales,
+  referencias,
 }: {
   clave: ClaveCatalogo;
   /** null = alta. */
   id: string | null;
   iniciales: Record<string, string>;
+  referencias: Referencias;
 }) {
   const def = CATALOGOS[clave];
   const [estado, accion] = useActionState(guardarRegistro.bind(null, clave, id), {});
@@ -27,6 +30,18 @@ export function FormularioCatalogo({
       <div className="grid gap-4 sm:grid-cols-2">
         {def.campos.map((campo) => {
           const comun = { etiqueta: campo.etiqueta, name: campo.columna, error: estado.errores?.[campo.columna] };
+          if (campo.tipo === "referencia") {
+            return (
+              <Selector
+                key={campo.columna}
+                {...comun}
+                opciones={referencias[campo.columna] ?? []}
+                vacio={campo.requerido ? "Elige…" : "—"}
+                required={campo.requerido}
+                defaultValue={valores[campo.columna] ?? ""}
+              />
+            );
+          }
           if (campo.tipo === "opcion") {
             return (
               <Selector

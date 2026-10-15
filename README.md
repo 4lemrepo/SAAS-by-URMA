@@ -16,7 +16,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 | Conexión a Supabase (navegador, servidor y proxy de sesión) | `src/lib/supabase/`, `src/proxy.ts` | Lista |
 | Login, registro, confirmación de correo y alta de empresa | `src/app/(acceso)/`, `src/app/auth/` | Listo |
 | Roles: dueño, administración y captura | `src/lib/auth/permisos.ts` | Listo |
-| Catálogos (unidades, operadores, clientes, rutas, fuentes) y parámetros | `src/app/(panel)/`, `src/lib/catalogos/` | Listo |
+| Catálogos (unidades, remolques, dollies, tipos de remolque, operadores, clientes, rutas, fuentes) y parámetros | `src/app/(panel)/`, `src/lib/catalogos/` | Listo |
 | Importación de catálogos desde Excel o CSV | — | Siguiente |
 | Viajes, cargas con foto y validación, conciliación en el tablero | — | Pendiente |
 
@@ -32,6 +32,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    4. `supabase/migrations/20261015000100_una_empresa_por_cuenta.sql`
    5. `supabase/migrations/20261015000200_rol_captura.sql`
    6. `supabase/migrations/20261015000300_catalogos.sql`
+   7. `supabase/migrations/20261016000000_remolques_armados.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
@@ -97,6 +98,15 @@ Con eso, tus usuarios (administración y captura) y otras empresas no recibiría
    (`{{ .Token }}`, ver paso 7 de arriba) y no un enlace.
 6. Prueba: regístrate con un correo que no sea del equipo, revisa que llegue el código (y que no
    caiga en spam) y prueba *Reenviar código*.
+
+## Unidades y armados
+
+Una unidad es el tractocamión (número económico). Se le enganchan remolques y dolly:
+**sencillo** = remolque 1; **full** = remolque 1 + dolly + remolque 2. La configuración sale
+del armado vigente, no se captura. Cada cambio de armado cierra el anterior y abre uno nuevo
+(`armados.desde` / `hasta`), así se sabe qué traía la unidad en cada fecha; el historial no se
+edita. Un remolque o dolly no puede estar en dos unidades a la vez (lo revisa la base). Cada viaje
+guarda el armado que llevó (`viajes.armado_id`).
 
 ## Pruebas
 

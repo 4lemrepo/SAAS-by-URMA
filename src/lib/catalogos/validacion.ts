@@ -3,7 +3,7 @@
  * Actions (valores de un formulario) y el importador (celdas de Excel o CSV).
  * La base de datos vuelve a validar; esto es para dar buenos mensajes.
  */
-import type { Campo, DefinicionCatalogo } from "./definiciones";
+import type { Campo, DefinicionCatalogo, OpcionReferencia } from "./definiciones";
 
 export type Registro = Record<string, string | number | null>;
 
@@ -53,7 +53,10 @@ export function parsearNumero(valor: unknown): number | null {
 
 type ResultadoCampo = { valor: string | number | null } | { error: string };
 
-export function validarCampo(campo: Campo, crudo: unknown): ResultadoCampo {
+/** Opciones válidas de cada campo de referencia, por columna. */
+export type Referencias = Record<string, readonly OpcionReferencia[]>;
+
+export function validarCampo(campo: Campo, crudo: unknown, opciones: readonly OpcionReferencia[] = []): ResultadoCampo {
   if (campo.tipo === "numero") {
     const n = parsearNumero(crudo);
     if (n === null) return campo.requerido ? { error: "Requerido" } : { valor: null };
@@ -68,6 +71,13 @@ export function validarCampo(campo: Campo, crudo: unknown): ResultadoCampo {
   }
 
   const texto = normalizarTexto(crudo);
+  if (campo.tipo === "referencia") {
+    if (!texto) return campo.requerido ? { error: "Requerido" } : { valor: null };
+    // Acepta el id (formulario) o el nombre (archivo importado).
+    const buscada = claveComparacion(texto);
+    const opcion = opciones.find((o) => o.valor === texto || claveComparacion(o.etiqueta) === buscada);
+    return opcion ? { valor: opcion.valor } : { error: "Elige una opción de la lista" };
+  }
   if (campo.tipo === "opcion") {
     if (!texto) {
       if (campo.porDefecto) return { valor: campo.porDefecto };
@@ -91,11 +101,15 @@ export function validarCampo(campo: Campo, crudo: unknown): ResultadoCampo {
 }
 
 /** Valida todos los campos de un catálogo. `valores` va por nombre de columna. */
-export function validarRegistro(def: DefinicionCatalogo, valores: Record<string, unknown>): ResultadoRegistro {
+export function validarRegistro(
+  def: DefinicionCatalogo,
+  valores: Record<string, unknown>,
+  referencias: Referencias = {},
+): ResultadoRegistro {
   const datos: Registro = {};
   const errores: Record<string, string> = {};
   for (const campo of def.campos) {
-    const r = validarCampo(campo, valores[campo.columna]);
+    const r = validarCampo(campo, valores[campo.columna], referencias[campo.columna]);
     if ("error" in r) errores[campo.columna] = r.error;
     else datos[campo.columna] = r.valor;
   }
