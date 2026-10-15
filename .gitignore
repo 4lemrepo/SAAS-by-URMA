@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# datos reales del cliente: nunca a git
+/datos_privados/
+/datos-privados/
