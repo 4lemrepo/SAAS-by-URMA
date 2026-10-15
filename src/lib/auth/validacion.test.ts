@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rutaSegura, validarCredenciales, validarEmpresa } from "./validacion";
+import { rutaSegura, validarCodigo, validarCredenciales, validarEmpresa } from "./validacion";
 
 const form = (campos: Record<string, string>) => {
   const f = new FormData();
@@ -53,5 +53,21 @@ describe("rutaSegura", () => {
     null,
   ])("bloquea %s", (destino) => {
     expect(rutaSegura(destino)).toBe("/tablero");
+  });
+});
+
+describe("validarCodigo", () => {
+  it("acepta 6 dígitos aunque se peguen con espacios o guion", () => {
+    expect(validarCodigo(form({ correo: "Alan@URMA.mx", codigo: " 123 456 " })))
+      .toEqual({ ok: true, datos: { correo: "alan@urma.mx", codigo: "123456" } });
+    expect(validarCodigo(form({ correo: "a@b.mx", codigo: "123-456" })).ok).toBe(true);
+  });
+  it.each(["", "12345", "12345a", "abcdef", "12345678901"])("rechaza el código %j", (codigo) => {
+    expect(validarCodigo(form({ correo: "a@b.mx", codigo })).ok).toBe(false);
+  });
+  it("exige el correo", () => {
+    const r = validarCodigo(form({ correo: "", codigo: "123456" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(Object.keys(r.errores)).toEqual(["correo"]);
   });
 });

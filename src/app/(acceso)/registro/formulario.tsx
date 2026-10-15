@@ -4,11 +4,19 @@ import { useActionState } from "react";
 import { LARGO_MINIMO_CONTRASENA } from "@/lib/auth/validacion";
 import { registrarse } from "../acciones";
 import { Aviso, BotonEnviar, Campo } from "../campos";
+import { ConfirmarConCodigo } from "../codigo";
 
 export function FormularioRegistro() {
   const [estado, accion] = useActionState(registrarse, {});
 
-  if (estado.exito) return <Aviso tipo="exito" texto={estado.mensaje} />;
+  if (estado.exito) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Aviso tipo="exito" texto={estado.mensaje} />
+        <ConfirmarConCodigo correo={estado.valores?.correo} />
+      </div>
+    );
+  }
 
   return (
     <form action={accion} className="flex flex-col gap-4">

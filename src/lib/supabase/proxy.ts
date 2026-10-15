@@ -3,9 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseEnv } from "./env";
 
 /** Rutas que no piden sesión. Todo lo demás manda a /login. */
-const RUTAS_PUBLICAS = ["/", "/login", "/registro", "/auth/confirmar"];
+const RUTAS_PUBLICAS = ["/", "/login", "/registro", "/verificar", "/auth/confirmar", "/auth/salir"];
 /** Con sesión iniciada no tiene sentido volver a estas. */
-const RUTAS_SOLO_SIN_SESION = ["/login", "/registro"];
+const RUTAS_SOLO_SIN_SESION = ["/login", "/registro", "/verificar"];
 
 /**
  * Refresca la sesión de Supabase en cada petición (rota el token y reescribe cookies)

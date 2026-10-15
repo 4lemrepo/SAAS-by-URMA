@@ -19,6 +19,12 @@ export default function PaginaLogin() {
           Crear cuenta
         </Link>
       </p>
+      <p className="mt-2 text-center text-sm text-zinc-600 dark:text-zinc-400">
+        ¿Te registraste y no has confirmado?{" "}
+        <Link href="/verificar" className="font-medium text-zinc-900 underline dark:text-zinc-100">
+          Tengo un código
+        </Link>
+      </p>
     </>
   );
 }

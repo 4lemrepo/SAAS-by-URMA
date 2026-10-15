@@ -79,3 +79,27 @@ export function rutaSegura(destino: string | null | undefined, porDefecto = "/ta
     return porDefecto;
   }
 }
+
+export interface DatosCodigo {
+  correo: string;
+  codigo: string;
+}
+
+/**
+ * Código de confirmación que llega por correo. Supabase lo manda de 6 dígitos
+ * (configurable hasta 10). Se aceptan espacios o guiones al pegarlo.
+ */
+export function validarCodigo(form: FormData): Resultado<DatosCodigo> {
+  const correo = texto(form.get("correo")).toLowerCase();
+  const codigo = texto(form.get("codigo")).replace(/[\s-]/g, "");
+  const errores: Partial<Record<keyof DatosCodigo, string>> = {};
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo) || correo.length > 254) {
+    errores.correo = "Escribe un correo válido";
+  }
+  if (!/^\d{6,10}$/.test(codigo)) {
+    errores.codigo = "Escribe el código de 6 dígitos que te llegó por correo";
+  }
+
+  return Object.keys(errores).length ? { ok: false, errores } : { ok: true, datos: { correo, codigo } };
+}

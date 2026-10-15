@@ -25,14 +25,53 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 3. **Corre las migraciones en orden** (SQL Editor → New query → pega el archivo → Run):
    1. `supabase/migrations/20261014000000_esquema_inicial.sql`
    2. `supabase/migrations/20261014000100_endurecer_seguridad.sql`
+   3. `supabase/migrations/20261015000000_exigir_correo_confirmado.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
    `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API). La `service_role` key **no** va aquí.
 5. **Auth → URL Configuration:** *Site URL* = `http://localhost:3000` (en producción, el dominio
    de Vercel) y agrega `http://localhost:3000/auth/confirmar` a *Redirect URLs*.
-6. `npm run dev` y abre http://localhost:3000 → *Crear cuenta* → confirma el correo →
-   da de alta la empresa → tablero.
+6. **Auth → Sign In / Providers → Email:** deja **Confirm email encendido** y revisa que
+   *Email OTP Length* sea `6` (la expiración, *Email OTP Expiration*, viene en 3600 s = 1 hora).
+   Si la confirmación está apagada, Supabase da por confirmado cualquier correo sin mandar nada,
+   y la app no deja entrar a nadie (lo avisa en el login).
+7. **Auth → Emails → Templates → Confirm signup:** la cuenta se confirma con un **código de 6
+   dígitos**, no con enlace (los filtros de seguridad del correo corporativo abren los enlaces y
+   los gastan antes que el usuario). Reemplaza la plantilla por esta y guarda:
+
+   - *Subject:* `Tu código para Control Diésel: {{ .Token }}`
+   - *Body:*
+     ```html
+     <h2>Confirma tu cuenta de Control Diésel</h2>
+     <p>Escribe este código en la app para confirmar tu correo:</p>
+     <p style="font-size:32px;font-weight:bold;letter-spacing:8px;font-family:monospace">{{ .Token }}</p>
+     <p>Vence en 1 hora. Si no creaste una cuenta, ignora este correo.</p>
+     ```
+
+   No dejes `{{ .ConfirmationURL }}` en ninguna parte: si el filtro abre ese enlace, también
+   gasta el código.
+8. `npm run dev` y abre http://localhost:3000 → *Crear cuenta* → escribe el código que llegó →
+   da de alta la empresa → tablero. Si no llega: *Reenviar código* (o *Tengo un código* en el login).
+
+## Antes del primer cliente externo: SMTP propio
+
+El correo que trae Supabase es solo para pruebas: manda muy pocos correos por hora (Authentication
+→ Rate Limits lo muestra) y puede negarse a enviar a direcciones que no sean del equipo del proyecto.
+Con eso, los operadores y clientes no recibirían su correo de confirmación.
+
+1. Elige un proveedor de correo transaccional (Resend, Postmark, Amazon SES, SendGrid…) y
+   **verifica el dominio** desde el que vas a enviar (p. ej. `notificaciones@tudominio.mx`):
+   agrega en tu DNS los registros SPF, DKIM y DMARC que te dé el proveedor.
+2. Crea en el proveedor una credencial SMTP (host, puerto, usuario y contraseña).
+3. En Supabase: **Authentication → Emails → SMTP Settings → Enable custom SMTP**. Llena el remitente
+   (correo y nombre, p. ej. "Control Diésel"), host, puerto (587 normalmente), usuario y contraseña. Guarda.
+4. **Authentication → Rate Limits:** sube el límite de correos por hora a lo que esperes
+   (p. ej. 100). Con el correo de Supabase ese límite no se puede subir.
+5. **Authentication → Emails → Templates:** confirma que "Confirm signup" sigue usando el código
+   (`{{ .Token }}`, ver paso 7 de arriba) y no un enlace.
+6. Prueba: regístrate con un correo que no sea del equipo, revisa que llegue el código (y que no
+   caiga en spam) y prueba *Reenviar código*.
 
 ## Pruebas
 

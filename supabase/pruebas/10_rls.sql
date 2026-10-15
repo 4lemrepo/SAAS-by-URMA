@@ -141,3 +141,15 @@ begin
   select count(*) into n from miembros where usuario_id = '00000000-0000-0000-0000-0000000000b1' and empresa_id = (select v from ctx where k='empB');
   raise notice '17 miembros de la empresa borrada (esperado 0): %', n;
 end $$;
+
+-- 18. Un correo sin confirmar no puede dar de alta una empresa (aunque tenga sesión)
+reset role;
+insert into auth.users values ('00000000-0000-0000-0000-0000000000c1', 'sinConfirmar', null);
+set role authenticated;
+do $$
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000c1',false);
+  begin perform crear_empresa('Flotilla sin confirmar');
+    raise notice '18 FALLA: usuario sin confirmar creó empresa';
+  exception when raise_exception then raise notice '18 OK: correo sin confirmar no da de alta empresa'; end;
+end $$;
