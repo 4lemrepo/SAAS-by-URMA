@@ -64,7 +64,7 @@ function SiLlegoEnlace() {
       <summary className="cursor-pointer font-medium">¿Tu correo trae un enlace y no un código?</summary>
       <ol className="mt-2 list-decimal space-y-1 pl-5">
         <li>
-          Abre el enlace <strong>&ldquo;Confirm your mail&rdquo;</strong> del correo (de preferencia en este mismo
+          Abre el enlace <strong>&ldquo;Confirm email address&rdquo;</strong> del correo (de preferencia en este mismo
           navegador). Eso confirma tu cuenta.
         </li>
         <li>
