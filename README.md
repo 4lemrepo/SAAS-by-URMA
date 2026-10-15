@@ -26,6 +26,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    1. `supabase/migrations/20261014000000_esquema_inicial.sql`
    2. `supabase/migrations/20261014000100_endurecer_seguridad.sql`
    3. `supabase/migrations/20261015000000_exigir_correo_confirmado.sql`
+   4. `supabase/migrations/20261015000100_una_empresa_por_cuenta.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y

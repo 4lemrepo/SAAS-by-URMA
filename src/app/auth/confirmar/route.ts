@@ -12,7 +12,7 @@ const TIPOS_OTP: EmailOtpType[] = ["signup", "invite", "magiclink", "recovery", 
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const siguiente = rutaSegura(searchParams.get("siguiente"), "/alta-empresa");
+  const siguiente = rutaSegura(searchParams.get("siguiente"), "/tablero");
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const tipo = searchParams.get("type") as EmailOtpType | null;

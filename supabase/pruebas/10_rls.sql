@@ -3,7 +3,8 @@
 insert into auth.users values
  ('00000000-0000-0000-0000-0000000000a1','duenoA'),
  ('00000000-0000-0000-0000-0000000000a2','operadorA'),
- ('00000000-0000-0000-0000-0000000000b1','duenoB');
+ ('00000000-0000-0000-0000-0000000000b1','duenoB'),
+ ('00000000-0000-0000-0000-0000000000d1','sinEmpresa');
 create temp table ctx (k text primary key, v uuid);
 grant all on ctx to authenticated;
 
@@ -122,11 +123,16 @@ begin
     raise notice '15d FALLA: B subió a la carpeta de A';
   exception when insufficient_privilege then raise notice '15d OK: B no sube a la carpeta de A'; end;
 
-  -- 16. crear_empresa valida nombre y RFC
+  -- 16. crear_empresa valida nombre y RFC (usuario aún sin empresa)
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
   begin perform crear_empresa('  '); raise notice '16 FALLA: empresa sin nombre';
-  exception when raise_exception then raise notice '16 OK: rechaza nombre vacío'; end;
+  exception when raise_exception then
+    if sqlerrm like '%nombre%' then raise notice '16 OK: rechaza nombre vacío';
+    else raise notice '16 FALLA: error inesperado: %', sqlerrm; end if; end;
   begin perform crear_empresa('Flotilla X', 'NO-ES-RFC'); raise notice '16b FALLA: RFC inválido aceptado';
-  exception when raise_exception then raise notice '16b OK: rechaza RFC inválido'; end;
+  exception when raise_exception then
+    if sqlerrm like '%RFC%' then raise notice '16b OK: rechaza RFC inválido';
+    else raise notice '16b FALLA: error inesperado: %', sqlerrm; end if; end;
   select count(*) into n from empresas where rfc = 'URM010101AB1';
   perform crear_empresa('Flotilla Y', ' urm010101ab1 ');
   select count(*) into n from empresas where rfc = 'URM010101AB1'; raise notice '16c RFC normalizado (esperado 1): %', n;
@@ -152,4 +158,23 @@ begin
   begin perform crear_empresa('Flotilla sin confirmar');
     raise notice '18 FALLA: usuario sin confirmar creó empresa';
   exception when raise_exception then raise notice '18 OK: correo sin confirmar no da de alta empresa'; end;
+end $$;
+
+-- 19. No se puede dar de alta una segunda empresa (doble envío, botón "atrás")
+do $$
+declare n int;
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  begin perform crear_empresa('URMA duplicada');
+    raise notice '19 FALLA: el dueño creó una segunda empresa';
+  exception when raise_exception then
+    if sqlerrm like 'Ya perteneces%' then raise notice '19 OK: no se crea una segunda empresa';
+    else raise notice '19 FALLA: error inesperado: %', sqlerrm; end if; end;
+  -- El operador tampoco puede abrir su propia empresa aparte.
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  begin perform crear_empresa('Empresa del operador');
+    raise notice '19b FALLA: el operador creó otra empresa';
+  exception when raise_exception then raise notice '19b OK: un miembro no crea otra empresa'; end;
+  select count(*) into n from empresas where nombre in ('URMA duplicada', 'Empresa del operador');
+  raise notice '19c empresas duplicadas creadas (esperado 0): %', n;
 end $$;

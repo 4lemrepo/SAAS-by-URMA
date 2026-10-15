@@ -1,9 +1,8 @@
 "use server";
 
-import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { esLimiteDeEnvios, MENSAJE_BLOQUEO } from "@/lib/auth/acceso";
-import { bloqueoDe, confirmacionApagada, TAG_SESION } from "@/lib/auth/sesion";
+import { destinoInicial, esLimiteDeEnvios, MENSAJE_BLOQUEO } from "@/lib/auth/acceso";
+import { bloqueoDe, confirmacionApagada, membresiasDe } from "@/lib/auth/sesion";
 import { rutaSegura, validarCodigo, validarCredenciales, validarEmpresa } from "@/lib/auth/validacion";
 import { crearClienteServidor } from "@/lib/supabase/server";
 
@@ -53,7 +52,6 @@ export async function iniciarSesion(_: EstadoFormulario, form: FormData): Promis
     return { mensaje: MENSAJE_BLOQUEO[bloqueo], sinConfirmar: bloqueo === "sin_confirmar", valores };
   }
 
-  updateTag(TAG_SESION);
   redirect(rutaSegura(valor(form, "siguiente")));
 }
 
@@ -115,7 +113,6 @@ export async function verificarCodigo(_: EstadoFormulario, form: FormData): Prom
     return { mensaje: MENSAJE_BLOQUEO[bloqueo], valores };
   }
 
-  updateTag(TAG_SESION);
   // El tablero manda al alta de empresa si todavía no tiene una.
   redirect("/tablero");
 }
@@ -152,22 +149,25 @@ export async function crearEmpresa(_: EstadoFormulario, form: FormData): Promise
   const bloqueo = await bloqueoDe(data.user);
   if (bloqueo) redirect(`/auth/salir?motivo=${bloqueo}`);
 
+  // Ya tiene empresa (doble envío, botón "atrás", otra pestaña): no crear otra.
+  if (destinoInicial(await membresiasDe(supabase, data.user.id)) === "/tablero") redirect("/tablero");
+
   const { error } = await supabase.rpc("crear_empresa", {
     p_nombre: v.datos.nombre,
     p_rfc: v.datos.rfc,
   });
   if (error) {
-    // crear_empresa lanza mensajes pensados para el usuario (validaciones y límite).
-    const conocido = /RFC|nombre|Límite|correo/.test(error.message);
+    // Dos envíos simultáneos: la base de datos dejó pasar solo uno.
+    if (error.message.includes("Ya perteneces a una empresa")) redirect("/tablero");
+    // crear_empresa lanza mensajes pensados para el usuario (validaciones).
+    const conocido = /RFC|nombre|correo/.test(error.message);
     return { mensaje: conocido ? error.message : "No se pudo dar de alta la empresa", valores };
   }
-  updateTag(TAG_SESION);
   redirect("/tablero");
 }
 
 export async function cerrarSesion() {
   const supabase = await crearClienteServidor();
   await supabase.auth.signOut();
-  updateTag(TAG_SESION);
   redirect("/login");
 }

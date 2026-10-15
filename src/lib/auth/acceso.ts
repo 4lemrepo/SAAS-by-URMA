@@ -46,3 +46,8 @@ export function esLimiteDeEnvios(error: { code?: string; status?: number } | nul
     error?.code === "over_request_rate_limit"
   );
 }
+
+/** Ruta a la que debe ir un usuario ya dentro: con empresa al tablero, sin empresa al alta. */
+export function destinoInicial(membresias: readonly unknown[]): "/tablero" | "/alta-empresa" {
+  return membresias.length > 0 ? "/tablero" : "/alta-empresa";
+}
