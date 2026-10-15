@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MENSAJE_BLOQUEO } from "@/lib/auth/acceso";
 import { iniciarSesion } from "../acciones";
-import { Aviso, BotonEnviar, Campo } from "../campos";
+import { Aviso, BotonEnviar, Campo } from "@/components/campos";
 import { ConfirmarConCodigo } from "../codigo";
 
 const MENSAJES_ERROR: Record<string, string> = {

@@ -16,7 +16,9 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 | Conexión a Supabase (navegador, servidor y proxy de sesión) | `src/lib/supabase/`, `src/proxy.ts` | Lista |
 | Login, registro, confirmación de correo y alta de empresa | `src/app/(acceso)/`, `src/app/auth/` | Listo |
 | Roles: dueño, administración y captura | `src/lib/auth/permisos.ts` | Listo |
-| Catálogos, viajes, cargas con foto y validación, tablero | — | Siguiente |
+| Catálogos (unidades, operadores, clientes, rutas, fuentes) y parámetros | `src/app/(panel)/`, `src/lib/catalogos/` | Listo |
+| Importación de catálogos desde Excel o CSV | — | Siguiente |
+| Viajes, cargas con foto y validación, conciliación en el tablero | — | Pendiente |
 
 ## Cómo correrlo
 
@@ -29,6 +31,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    3. `supabase/migrations/20261015000000_exigir_correo_confirmado.sql`
    4. `supabase/migrations/20261015000100_una_empresa_por_cuenta.sql`
    5. `supabase/migrations/20261015000200_rol_captura.sql`
+   6. `supabase/migrations/20261015000300_catalogos.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y

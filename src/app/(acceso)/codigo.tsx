@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { reenviarCodigo, verificarCodigo } from "./acciones";
-import { Aviso, BotonEnviar, Campo } from "./campos";
+import { Aviso, BotonEnviar, Campo } from "@/components/campos";
 
 /** Supabase no deja pedir otro código del mismo correo antes de ~60 s. */
 const ESPERA_REENVIO_S = 60;

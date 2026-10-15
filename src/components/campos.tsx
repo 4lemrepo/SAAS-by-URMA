@@ -58,3 +58,40 @@ export function Aviso({ texto, tipo = "error" }: { texto?: string; tipo?: "error
     </p>
   );
 }
+
+interface PropsSelector extends React.SelectHTMLAttributes<HTMLSelectElement> {
+  etiqueta: string;
+  name: string;
+  opciones: readonly { valor: string; etiqueta: string }[];
+  error?: string;
+  /** Texto de la opción vacía; si no se da, no hay opción vacía. */
+  vacio?: string;
+}
+
+export function Selector({ etiqueta, name, opciones, error, vacio, ...select }: PropsSelector) {
+  const idAyuda = `${name}-ayuda`;
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="font-medium">{etiqueta}</span>
+      <select
+        name={name}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? idAyuda : undefined}
+        className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-base outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 aria-[invalid=true]:border-red-500 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-200"
+        {...select}
+      >
+        {vacio !== undefined && <option value="">{vacio}</option>}
+        {opciones.map((o) => (
+          <option key={o.valor} value={o.valor}>
+            {o.etiqueta}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <span id={idAyuda} className="text-red-600">
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}

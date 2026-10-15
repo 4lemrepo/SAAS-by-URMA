@@ -292,3 +292,60 @@ begin
     raise notice '28b cargas validadas que captura regresó a pendiente (esperado 0): %', n;
   exception when insufficient_privilege then raise notice '28b OK: captura no reabre cargas validadas'; end;
 end $$;
+
+-- ---------- Catálogos (migración 20261015000300) ----------
+do $$
+declare n int; e uuid := (select v from ctx where k='empA');
+begin
+  -- 29. Desactivar: dueño y administración sí, captura no
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  update unidades set activa = false; get diagnostics n = row_count;
+  raise notice '29 unidades que captura desactivó (esperado 0): %', n;
+  update clientes set activo = false; get diagnostics n = row_count;
+  raise notice '29b clientes que captura desactivó (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  update clientes set activo = false where empresa_id = e; get diagnostics n = row_count;
+  raise notice '29c clientes que administración desactivó (esperado 1): %', n;
+  update clientes set activo = true where empresa_id = e;
+
+  -- 30. Sin duplicados, aunque cambien mayúsculas o espacios
+  begin insert into unidades (empresa_id, numero_economico) values (e,' 0708 ');
+    raise notice '30 FALLA: número económico duplicado';
+  exception when unique_violation then raise notice '30 OK: número económico duplicado rechazado'; end;
+  begin insert into clientes (empresa_id, nombre) values (e,'agro sa  ');
+    raise notice '30b FALLA: cliente duplicado';
+  exception when unique_violation then raise notice '30b OK: cliente duplicado rechazado'; end;
+  begin insert into operadores (empresa_id, nombre) values (e,'JUAN');
+    raise notice '30c FALLA: operador duplicado';
+  exception when unique_violation then raise notice '30c OK: operador duplicado rechazado'; end;
+  insert into rutas (empresa_id, origen, destino, km) values (e,'La Barca','Guadalajara',110);
+  begin insert into rutas (empresa_id, origen, destino, km) values (e,'la barca ','GUADALAJARA',112);
+    raise notice '30d FALLA: ruta duplicada';
+  exception when unique_violation then raise notice '30d OK: ruta duplicada rechazada'; end;
+  -- La otra empresa sí puede usar el mismo número económico
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  insert into unidades (empresa_id, numero_economico)
+    select empresa_id, '0708' from miembros where usuario_id = auth.uid();
+  raise notice '30e OK: otra empresa usa el mismo número económico';
+
+  -- 31. Un registro con historial no se puede borrar (se desactiva)
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  begin delete from unidades where empresa_id = e and numero_economico = '0708';
+    raise notice '31 FALLA: se borró una unidad con viajes';
+  exception when foreign_key_violation then raise notice '31 OK: unidad con historial no se borra'; end;
+
+  -- 32. Validaciones de la base
+  begin insert into rutas (empresa_id, origen, destino, km) values (e,'X','Guadalajara',10);
+    raise notice '32 FALLA: ruta con origen de 1 letra';
+  exception when check_violation then raise notice '32 OK: origen inválido rechazado'; end;
+  begin insert into unidades (empresa_id, numero_economico, anio) values (e,'0999',1900);
+    raise notice '32b FALLA: año inválido';
+  exception when check_violation then raise notice '32b OK: año inválido rechazado'; end;
+
+  -- 33. Captura consulta rutas pero no las da de alta
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from rutas; raise notice '33 captura ve rutas (esperado 1): %', n;
+  begin insert into rutas (empresa_id, origen, destino, km) values (e,'Ocotlán','León',200);
+    raise notice '33b FALLA: captura dio de alta una ruta';
+  exception when insufficient_privilege then raise notice '33b OK: captura no da de alta rutas'; end;
+end $$;

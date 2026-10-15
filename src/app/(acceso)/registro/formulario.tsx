@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { LARGO_MINIMO_CONTRASENA } from "@/lib/auth/validacion";
 import { registrarse } from "../acciones";
-import { Aviso, BotonEnviar, Campo } from "../campos";
+import { Aviso, BotonEnviar, Campo } from "@/components/campos";
 import { ConfirmarConCodigo } from "../codigo";
 
 export function FormularioRegistro() {

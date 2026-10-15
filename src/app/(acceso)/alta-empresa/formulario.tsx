@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { crearEmpresa } from "../acciones";
-import { Aviso, BotonEnviar, Campo } from "../campos";
+import { Aviso, BotonEnviar, Campo } from "@/components/campos";
 
 export function FormularioEmpresa() {
   const [estado, accion] = useActionState(crearEmpresa, {});

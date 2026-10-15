@@ -2,11 +2,12 @@ import "server-only";
 import { cacheLife } from "next/cache";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { destinoInicial, motivoBloqueo, type MotivoBloqueo } from "./acceso";
-import type { Rol } from "./permisos";
+import { puede, type Permiso, type Rol } from "./permisos";
 
 export type { Rol };
 
@@ -55,10 +56,12 @@ export async function bloqueoDe(usuario: User | null): Promise<MotivoBloqueo | n
  * No usar "use cache: private": guardaría las empresas en el navegador y, tras
  * el alta, el tablero podría seguir viendo "sin empresa".
  *
+ * cache(): el layout y la página la piden en la misma petición; se consulta una vez.
+ *
  * getUser() (no getClaims) porque el JWT no trae email_confirmed_at: se pregunta
  * al servidor de Auth, que además valida que la sesión siga viva.
  */
-export async function usuarioActual(): Promise<UsuarioActual> {
+export const usuarioActual = cache(async (): Promise<UsuarioActual> => {
   await connection();
 
   const supabase = await crearClienteServidor();
@@ -74,7 +77,7 @@ export async function usuarioActual(): Promise<UsuarioActual> {
     correo: data.user.email ?? null,
     membresias: await membresiasDe(supabase, data.user.id),
   };
-}
+});
 
 /** Empresas a las que pertenece el usuario (RLS: solo puede ver las suyas). */
 export async function membresiasDe(
@@ -109,4 +112,25 @@ export async function usuarioSinEmpresa() {
   const usuario = await usuarioActual();
   if (destinoInicial(usuario.membresias) === "/tablero") redirect("/tablero");
   return usuario;
+}
+
+/** Para pantallas de un permiso (catálogos, parámetros…): sin permiso, al tablero. */
+export async function usuarioConPermiso(permiso: Permiso) {
+  const usuario = await usuarioConEmpresa();
+  if (!puede(usuario.empresa.rol, permiso)) redirect("/tablero");
+  return usuario;
+}
+
+/**
+ * Para Server Actions: se pueden llamar con un POST directo, así que cada una
+ * revisa sesión, correo confirmado y rol. RLS vuelve a revisar en la base.
+ * Devuelve null si no hay sesión válida o el usuario no tiene empresa.
+ */
+export async function sesionDeAccion() {
+  const supabase = await crearClienteServidor();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user || (await bloqueoDe(data.user))) return null;
+  const [empresa] = await membresiasDe(supabase, data.user.id);
+  if (!empresa) return null;
+  return { supabase, usuarioId: data.user.id, empresa };
 }
