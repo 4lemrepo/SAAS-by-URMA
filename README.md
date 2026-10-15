@@ -17,7 +17,8 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 | Login, registro, confirmación de correo y alta de empresa | `src/app/(acceso)/`, `src/app/auth/` | Listo |
 | Roles: dueño, administración y captura | `src/lib/auth/permisos.ts` | Listo |
 | Catálogos (unidades, remolques, dollies, tipos de remolque, operadores, clientes, rutas, fuentes) y parámetros | `src/app/(panel)/`, `src/lib/catalogos/` | Listo |
-| Importación de catálogos desde Excel o CSV | — | Siguiente |
+| Importación de catálogos (plantilla por catálogo o control de viajes) | `src/app/(panel)/catalogos/importar/`, `src/lib/importacion/` | Listo |
+| Usuarios con invitación por correo | — | Siguiente |
 | Viajes, cargas con foto y validación, conciliación en el tablero | — | Pendiente |
 
 ## Cómo correrlo
@@ -34,6 +35,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    6. `supabase/migrations/20261015000300_catalogos.sql`
    7. `supabase/migrations/20261016000000_remolques_armados.sql`
    8. `supabase/migrations/20261016000100_autovalidacion_parametros.sql`
+   9. `supabase/migrations/20261016000200_tramos_importacion.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
@@ -110,6 +112,27 @@ del armado vigente, no se captura. Cada cambio de armado cierra el anterior y ab
 (`armados.desde` / `hasta`), así se sabe qué traía la unidad en cada fecha; el historial no se
 edita. Un remolque o dolly no puede estar en dos unidades a la vez (lo revisa la base). Cada viaje
 guarda el armado que llevó (`viajes.armado_id`).
+
+## Rutas y tramos
+
+Una ruta del catálogo es un tramo de **un sentido** (origen → destino) con los km de ese sentido;
+la ida y el regreso son dos rutas. Un viaje tiene un tramo cargado y un tramo vacío opcional
+(regreso o reposicionamiento), cada uno con su ruta. Los km se prellenan desde la ruta y son
+editables; si se desvían más que la tolerancia de km de la empresa (10% por defecto, en
+Parámetros) el viaje se marca para revisión (`src/lib/viajes/km.ts`).
+
+## Importar catálogos
+
+*Catálogos → Importar desde Excel* (dueño y administración):
+
+- **Plantilla por catálogo** (unidades, operadores, clientes, rutas): descarga la plantilla, llénala
+  y súbela (.xlsx o .csv).
+- **Mi control de viajes**: sube el Excel de viajes (una fila por viaje) y saca unidades, operadores,
+  clientes, fuentes y rutas sin repetir. Muestra el rendimiento real por unidad como sugerencia (no
+  lo guarda) y pide decidir los km de las rutas que aparecen con km distintos.
+
+El archivo se lee en el navegador; la vista previa marca errores por fila y lo que ya existe. Al
+confirmar, el servidor vuelve a validar y `importar_catalogos()` guarda todo o nada.
 
 ## Pruebas
 

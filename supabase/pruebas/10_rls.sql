@@ -497,3 +497,55 @@ begin
     raise notice '45c FALLA: otra empresa cambió un armado';
   exception when raise_exception or insufficient_privilege then raise notice '45c OK: otra empresa no cambia armados'; end;
 end $$;
+
+-- ---------- Tramos, crédito en estación e importación (migración 20261016000200) ----------
+do $$
+declare n int; t text; j jsonb; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  u uuid; ida uuid; regreso uuid; ruta_b uuid;
+begin
+  -- 46. Fuente de tipo crédito en estación
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  insert into fuentes_diesel (empresa_id, nombre, tipo) values (e, 'Crédito Estaciones X', 'credito_estacion');
+  raise notice '46 OK: fuente de crédito en estación';
+  select tolerancia_km_pct::int into n from parametros_empresa where empresa_id = e;
+  raise notice '46b tolerancia de km por defecto (esperado 10): %', n;
+
+  -- 47. Viaje con tramo cargado y tramo vacío, cada uno con su ruta
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into rutas (empresa_id, origen, destino, km) values (e, 'Pueblo A', 'Pueblo B', 400) returning id into ida;
+  insert into rutas (empresa_id, origen, destino, km) values (e, 'Pueblo B', 'Pueblo A', 410) returning id into regreso;
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, ruta_cargado_id, km_cargado, km_cargado_ruta, ruta_vacio_id, km_vacio, km_vacio_ruta)
+    values (e, u, o, now(), ida, 455, 400, regreso, 410, 410);
+  raise notice '47 OK: viaje con tramo cargado y tramo vacío';
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  insert into rutas (empresa_id, origen, destino, km)
+    select empresa_id, 'Otra', 'Empresa', 10 from miembros where usuario_id = auth.uid() returning id into ruta_b;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, ruta_vacio_id) values (e, u, o, now(), ruta_b);
+    raise notice '47b FALLA: tramo vacío con ruta de otra empresa';
+  exception when foreign_key_violation then raise notice '47b OK: la ruta del tramo vacío es de la misma empresa'; end;
+
+  -- 48. Importación: todo o nada
+  j := importar_catalogos(e, '{"unidades":[{"numero_economico":"IMP-1","placas":"AAA111"}],
+    "operadores":[{"nombre":"Operador Importado"}],"clientes":[{"nombre":"Cliente Importado"}],
+    "rutas":[{"origen":"Pueblo C","destino":"Pueblo D","km":120}],"fuentes":[{"nombre":"Tarjeta Importada","tipo":"tarjeta"}]}');
+  raise notice '48 registros importados (esperado 5): %', (select sum(value::int) from jsonb_each_text(j));
+  begin perform importar_catalogos(e, '{"operadores":[{"nombre":"No Debe Quedar"}],"unidades":[{"numero_economico":"imp-1"}]}');
+    raise notice '48b FALLA: importación con duplicado';
+  exception when unique_violation then null; end;
+  select count(*) into n from operadores where nombre = 'No Debe Quedar';
+  raise notice '48b si una fila falla no se guarda nada (esperado 0): %', n;
+  begin perform importar_catalogos(e, '{"rutas":[{"origen":"Pueblo E","destino":"Pueblo F","km":0}]}');
+    raise notice '48c FALLA: ruta con 0 km importada';
+  exception when check_violation then raise notice '48c OK: la importación respeta las validaciones'; end;
+
+  -- 49. Captura y otras empresas no importan
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  begin perform importar_catalogos(e, '{"operadores":[{"nombre":"De Captura"}]}');
+    raise notice '49 FALLA: captura importó';
+  exception when insufficient_privilege then raise notice '49 OK: captura no importa'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  begin perform importar_catalogos(e, '{"operadores":[{"nombre":"De Otra Empresa"}]}');
+    raise notice '49b FALLA: otra empresa importó en A';
+  exception when insufficient_privilege then raise notice '49b OK: otra empresa no importa en A'; end;
+end $$;

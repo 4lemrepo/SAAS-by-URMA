@@ -7,6 +7,7 @@ import { validarCampo } from "@/lib/catalogos/validacion";
 
 export interface Parametros {
   tolerancia_pct: number;
+  tolerancia_km_pct: number;
   precio_diesel_litro: number | null;
 }
 
@@ -22,6 +23,18 @@ export const CAMPOS_PARAMETROS: readonly CampoNumero[] = [
     decimales: 2,
     unidad: "%",
     ayuda: "Diferencia aceptada entre litros reales y teóricos antes de marcar amarillo",
+  },
+  {
+    columna: "tolerancia_km_pct",
+    etiqueta: "Tolerancia de kilómetros",
+    tipo: "numero",
+    requerido: true,
+    min: 0,
+    minExclusivo: true,
+    max: 100,
+    decimales: 2,
+    unidad: "%",
+    ayuda: "Si los km de un tramo se desvían más que esto de los de la ruta, el viaje se marca para revisión",
   },
   {
     columna: "precio_diesel_litro",

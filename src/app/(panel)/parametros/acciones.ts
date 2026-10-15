@@ -15,6 +15,7 @@ export interface EstadoParametros {
 export async function guardarParametros(_: EstadoParametros, form: FormData): Promise<EstadoParametros> {
   const valores = {
     tolerancia_pct: String(form.get("tolerancia_pct") ?? ""),
+    tolerancia_km_pct: String(form.get("tolerancia_km_pct") ?? ""),
     precio_diesel_litro: String(form.get("precio_diesel_litro") ?? ""),
   };
   const sesion = await sesionDeAccion();

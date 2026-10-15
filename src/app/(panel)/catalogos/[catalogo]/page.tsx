@@ -6,6 +6,7 @@ import { puede } from "@/lib/auth/permisos";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
 import { leerCatalogo, leerReferencias } from "@/lib/catalogos/datos";
 import { CATALOGOS, CLAVES_CATALOGO, esClaveCatalogo } from "@/lib/catalogos/definiciones";
+import { CATALOGOS_IMPORTABLES } from "@/lib/importacion/plantilla";
 import { ListaCatalogo } from "../lista";
 
 export function generateStaticParams() {
@@ -47,12 +48,19 @@ async function Contenido({ clave }: { clave: keyof typeof CATALOGOS }) {
   return (
     <>
       {puedeEditar && (
-        <Link
-          href={`/catalogos/${clave}/nuevo`}
-          className="self-start rounded-md bg-zinc-900 px-4 py-2 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          Agregar {CATALOGOS[clave].singular}
-        </Link>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link
+            href={`/catalogos/${clave}/nuevo`}
+            className="rounded-md bg-zinc-900 px-4 py-2 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            Agregar {CATALOGOS[clave].singular}
+          </Link>
+          {(CATALOGOS_IMPORTABLES as readonly string[]).includes(clave) && (
+            <Link href="/catalogos/importar" className="text-sm underline">
+              Importar desde Excel
+            </Link>
+          )}
+        </div>
       )}
       <ListaCatalogo clave={clave} filas={filas} referencias={referencias} puedeEditar={puedeEditar} />
     </>

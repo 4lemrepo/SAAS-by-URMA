@@ -104,6 +104,7 @@ export const OPCIONES_TIPO_FUENTE = [
   { valor: "tanque_propio", etiqueta: "Tanque propio" },
   { valor: "estacion", etiqueta: "Estación" },
   { valor: "tarjeta", etiqueta: "Tarjeta" },
+  { valor: "credito_estacion", etiqueta: "Crédito en estación" },
 ] as const;
 
 export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
@@ -254,7 +255,8 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     titulo: "Rutas",
     singular: "ruta",
     conArticulo: "una ruta",
-    descripcion: "Origen, destino y kilómetros. El rendimiento por ruta es opcional y manda sobre el de la unidad.",
+    descripcion:
+      "Tramos de un sentido (origen → destino) con sus kilómetros; la ida y el regreso son dos rutas. El rendimiento por ruta es opcional y manda sobre el de la unidad.",
     columnaActivo: "activa",
     campos: [
       { columna: "origen", etiqueta: "Origen", tipo: "texto", requerido: true, min: 2, max: 120 },
@@ -269,7 +271,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
         max: 10000,
         decimales: 1,
         unidad: "km",
-        ayuda: "Distancia de un sentido",
+        ayuda: "Solo este sentido (no ida y vuelta)",
       },
       rendimiento("rend_cargado_kml", "Rendimiento cargado (opcional)", "Déjalo vacío para usar el de la unidad"),
       rendimiento("rend_vacio_kml", "Rendimiento vacío (opcional)", "Déjalo vacío para usar el de la unidad"),
@@ -286,7 +288,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     titulo: "Fuentes de diésel",
     singular: "fuente de diésel",
     conArticulo: "una fuente de diésel",
-    descripcion: "Dónde se carga: tanques propios, estaciones y tarjetas.",
+    descripcion: "Dónde se carga: tanques propios, estaciones, tarjetas y crédito en estaciones.",
     columnaActivo: "activa",
     campos: [
       { columna: "nombre", etiqueta: "Nombre", tipo: "texto", requerido: true, min: 2, max: 120, ayuda: "Ej. Tanque La Barca" },

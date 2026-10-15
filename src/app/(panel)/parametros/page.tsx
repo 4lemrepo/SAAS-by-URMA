@@ -30,7 +30,7 @@ async function Contenido() {
   const supabase = await crearClienteServidor();
   const { data, error } = await supabase
     .from("parametros_empresa")
-    .select("tolerancia_pct, precio_diesel_litro")
+    .select("tolerancia_pct, tolerancia_km_pct, precio_diesel_litro")
     .eq("empresa_id", empresa.empresaId)
     .single();
   if (error) throw new Error("No se pudieron leer los parámetros");
@@ -38,6 +38,7 @@ async function Contenido() {
     <FormularioParametros
       iniciales={{
         tolerancia_pct: valorDeFormulario(data.tolerancia_pct),
+        tolerancia_km_pct: valorDeFormulario(data.tolerancia_km_pct),
         precio_diesel_litro: valorDeFormulario(data.precio_diesel_litro),
       }}
     />

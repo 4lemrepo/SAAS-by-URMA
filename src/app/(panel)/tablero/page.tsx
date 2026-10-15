@@ -29,6 +29,13 @@ async function Tablero() {
             Catálogos{editaCatalogos ? "" : " (solo consulta)"}
           </h2>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {editaCatalogos && (
+              <Tarjeta
+                href="/catalogos/importar"
+                titulo="Importar desde Excel"
+                texto="Plantilla por catálogo o tu control de viajes."
+              />
+            )}
             {CLAVES_CATALOGO.map((clave) => (
               <Tarjeta
                 key={clave}
@@ -48,7 +55,7 @@ async function Tablero() {
             <Tarjeta
               href="/parametros"
               titulo="Parámetros"
-              texto="Tolerancia del semáforo y precio del diésel por litro."
+              texto="Tolerancias del semáforo y de kilómetros, y precio del diésel por litro."
             />
           </ul>
         </section>
