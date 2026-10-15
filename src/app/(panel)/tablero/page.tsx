@@ -28,6 +28,9 @@ async function Tablero() {
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Tarjeta href="/viajes" titulo="Viajes" texto="Tramos, cargas de diésel, gastos, cierre y exportación." />
           <Tarjeta href="/viajes/nuevo" titulo="Nuevo viaje" texto="Empieza donde terminó el viaje anterior de la unidad." />
+          {editaCatalogos && (
+            <Tarjeta href="/costos" titulo="Costos" texto="Mantenimiento, llantas, seguro, oficina… por equipo y por mes." />
+          )}
         </ul>
       </section>
 
@@ -44,7 +47,7 @@ async function Tablero() {
                 texto="Plantilla por catálogo o tu control de viajes."
               />
             )}
-            {CLAVES_CATALOGO.map((clave) => (
+            {CLAVES_CATALOGO.filter((clave) => editaCatalogos || !CATALOGOS[clave].soloAdmin).map((clave) => (
               <Tarjeta
                 key={clave}
                 href={`/catalogos/${clave}`}

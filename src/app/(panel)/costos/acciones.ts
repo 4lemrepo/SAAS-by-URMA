@@ -1,0 +1,47 @@
+"use server";
+
+import { refresh } from "next/cache";
+import { redirect } from "next/navigation";
+import { puede } from "@/lib/auth/permisos";
+import { sesionDeAccion } from "@/lib/auth/sesion";
+import { validarCosto } from "@/lib/costos/validacion";
+
+export interface EstadoCosto {
+  mensaje?: string;
+  exito?: boolean;
+  errores?: Record<string, string | undefined>;
+  valores?: Record<string, string>;
+  enviadoEn?: number;
+}
+
+async function sesionAdmin() {
+  const sesion = await sesionDeAccion();
+  if (!sesion) redirect("/login");
+  return puede(sesion.empresa.rol, "editarCatalogos") ? sesion : null;
+}
+
+export async function guardarCosto(_: EstadoCosto, form: FormData): Promise<EstadoCosto> {
+  const v: Record<string, string> = {};
+  for (const [k, x] of form.entries()) if (typeof x === "string") v[k] = x;
+  const sesion = await sesionAdmin();
+  if (!sesion) return { mensaje: "Solo dueño y administración registran costos", valores: v };
+  const r = validarCosto(v, sesion.empresa.empresaId);
+  if (!r.ok) return { errores: r.errores, valores: v };
+  const folio = (v.folio ?? "").trim() || null;
+  const { error } = await sesion.supabase.from("costos").insert({ ...r.datos, folio, empresa_id: sesion.empresa.empresaId });
+  if (error) {
+    return { mensaje: error.code === "23505" ? "Ese folio ya existe" : "No se pudo guardar el costo", valores: v };
+  }
+  refresh();
+  return { exito: true, mensaje: "Costo registrado.", enviadoEn: Date.now() };
+}
+
+/** Nada se borra: un costo equivocado se cancela (queda en la bitácora). */
+export async function cancelarCosto(id: string, cancelado: boolean): Promise<string | null> {
+  const sesion = await sesionAdmin();
+  if (!sesion) return "Solo dueño y administración cambian costos";
+  const { error } = await sesion.supabase.from("costos").update({ cancelado }).eq("id", id).eq("empresa_id", sesion.empresa.empresaId);
+  if (error) return "No se pudo cambiar el costo";
+  refresh();
+  return null;
+}

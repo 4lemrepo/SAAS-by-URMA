@@ -3,9 +3,10 @@ import type { Campo, DefinicionCatalogo, OpcionReferencia } from "./definiciones
 /** Valor de un campo tal como se muestra en una lista. */
 export function formatearValor(
   campo: Campo | undefined,
-  valor: string | number | null | undefined,
+  valor: string | number | boolean | null | undefined,
   opciones: readonly OpcionReferencia[] = [],
 ): string {
+  if (typeof valor === "boolean") return valor ? "Sí" : "No";
   if (valor === null || valor === undefined || valor === "") return "—";
   // Columna calculada: ya viene como texto.
   if (!campo) return String(valor);
@@ -22,7 +23,7 @@ export function formatearValor(
 }
 
 /** Valor de un campo para precargar un formulario. */
-export function valorDeFormulario(valor: string | number | null | undefined): string {
+export function valorDeFormulario(valor: string | number | boolean | null | undefined): string {
   return valor === null || valor === undefined ? "" : String(valor);
 }
 

@@ -20,7 +20,8 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
 | Importación de catálogos (plantilla por catálogo o control de viajes) | `src/app/(panel)/catalogos/importar/`, `src/lib/importacion/` | Listo |
 | Viajes: tramos, cargas, gastos, tarifa, pago al operador, cierre, bitácora y exportación | `src/app/(panel)/viajes/`, `src/lib/viajes/` | Listo |
 | Usuarios (permisos; invitaciones después) | `src/app/(panel)/usuarios/` | Permisos listos |
-| Costos de unidad y tablero de KPIs | — | Siguiente |
+| Costos de equipo y generales | `src/app/(panel)/costos/`, `src/lib/costos/` | Listo |
+| Tablero de KPIs | — | Siguiente |
 | Viajes, cargas con foto y validación, conciliación en el tablero | — | Pendiente |
 
 ## Cómo correrlo
@@ -40,6 +41,7 @@ Primer cliente: **URMA Logística**. Después, otras flotillas de 5 a 80 unidade
    9. `supabase/migrations/20261016000200_tramos_importacion.sql`
    10. `supabase/migrations/20261017000000_folios_permisos_bitacora.sql`
    11. `supabase/migrations/20261017000100_viajes.sql`
+   12. `supabase/migrations/20261017000200_costos.sql`
 
    Nunca edites una migración ya aplicada: crea una nueva.
 4. **Variables:** `cp .env.example .env.local` y llena `NEXT_PUBLIC_SUPABASE_URL` y
@@ -145,6 +147,15 @@ más que la tolerancia de km, se pide motivo. Cada viaje guarda el armado que tr
 - Las fechas se capturan y muestran en hora del centro de México.
 
 Los cálculos (km, flete, pago, diésel, utilidad, merma) están en `src/lib/viajes/calculos.ts`.
+
+## Costos
+
+Lo que no es de un viaje (mantenimiento, llantas, seguro, financiamiento, GPS, permisos, oficina…),
+con folio, proveedor y comprobante. Un costo de **tracto** es de esa unidad; de **remolque o
+dolly**, de la unidad que lo traía enganchado ese día (si no estaba enganchado: "equipo sin
+asignar"); **sin equipo** es general y se prorratea entre las unidades activas del mes (partes
+iguales o por km, en Parámetros). Se puede repartir en N meses. Cada categoría tiene "incluir en
+rentabilidad"; "Sueldo y prestaciones del operador" nace apagada. Lógica en `src/lib/costos/`.
 
 ## Importar catálogos
 

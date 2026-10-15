@@ -20,7 +20,7 @@ function columnas(clave: ClaveCatalogo) {
 function aFila(clave: ClaveCatalogo, fila: Record<string, unknown>): FilaCatalogo {
   const def = CATALOGOS[clave];
   const valores: Registro = {};
-  for (const c of def.campos) valores[c.columna] = (fila[c.columna] as string | number | null) ?? null;
+  for (const c of def.campos) valores[c.columna] = (fila[c.columna] as string | number | boolean | null) ?? null;
   return { id: String(fila.id), activo: fila[def.columnaActivo] === true, valores };
 }
 

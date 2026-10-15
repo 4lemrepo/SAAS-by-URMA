@@ -724,3 +724,61 @@ begin
   select factura_por::text into t from clientes where empresa_id = e limit 1;
   raise notice '58c el cliente factura por peso cargado por defecto: %', case when t = 'cargado' then 'OK' else 'FALLA' end;
 end $$;
+
+-- ---------- Costos (migración 20261017000200) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); u uuid; r1 uuid; cat uuid; sueldo uuid; otra uuid;
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  -- 60. Categorías precargadas; el sueldo del operador nace fuera de la rentabilidad
+  select count(*) into n from categorias_costo where empresa_id = e; raise notice '60 categorías de costo precargadas (esperado 13): %', n;
+  select count(*) into n from categorias_costo where empresa_id = e and not incluir_en_rentabilidad and nombre = 'Sueldo y prestaciones del operador';
+  raise notice '60b sueldo del operador excluido de la rentabilidad (esperado 1): %', n;
+
+  -- 61. Costos de tracto, remolque y generales con folio propio
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  select id into r1 from remolques where empresa_id = e limit 1;
+  select id into cat from categorias_costo where empresa_id = e and nombre = 'Llantas y rines';
+  insert into costos (empresa_id, fecha, mes, categoria_id, monto, unidad_id) values (e, '2026-10-05', '2026-10-01', cat, 24000, u) returning folio into t;
+  raise notice '61 folio de costo: %', case when t = 'C-0001' then 'OK' else 'FALLA ' || t end;
+  insert into costos (empresa_id, fecha, mes, categoria_id, monto, remolque_id) values (e, '2026-10-05', '2026-10-01', cat, 8000, r1);
+  select id into cat from categorias_costo where empresa_id = e and nombre = 'Seguro';
+  insert into costos (empresa_id, fecha, mes, meses, categoria_id, monto) values (e, '2026-10-01', '2026-10-01', 12, cat, 120000);
+  raise notice '61b OK: costo de remolque y costo general repartido en 12 meses';
+  begin insert into costos (empresa_id, mes, categoria_id, monto, unidad_id, remolque_id) values (e, '2026-10-01', cat, 10, u, r1);
+    raise notice '61c FALLA: costo con dos equipos';
+  exception when check_violation then raise notice '61c OK: un costo es de un solo equipo'; end;
+  begin insert into costos (empresa_id, mes, categoria_id, monto) values (e, '2026-10-15', cat, 10);
+    raise notice '61d FALLA: mes que no es día 1';
+  exception when check_violation then raise notice '61d OK: el mes empieza el día 1'; end;
+
+  -- 62. Interruptor de rentabilidad por categoría
+  select id into sueldo from categorias_costo where empresa_id = e and nombre = 'Sueldo y prestaciones del operador';
+  update categorias_costo set incluir_en_rentabilidad = true where id = sueldo; get diagnostics n = row_count;
+  raise notice '62 categorías que administración cambió (esperado 1): %', n;
+  update categorias_costo set incluir_en_rentabilidad = false where id = sueldo;
+  select count(*) into n from bitacora where tabla = 'categorias_costo' and registro_id = sueldo and campo = 'incluir_en_rentabilidad';
+  raise notice '62b cambios del interruptor en la bitácora (esperado 2): %', n;
+
+  -- 63. Captura no ve ni registra costos; nadie los borra
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from costos; raise notice '63 costos que ve captura (esperado 0): %', n;
+  select count(*) into n from categorias_costo; raise notice '63b categorías de costo que ve captura (esperado 0): %', n;
+  begin insert into costos (empresa_id, mes, categoria_id, monto) values (e, '2026-10-01', cat, 10);
+    raise notice '63c FALLA: captura registró un costo';
+  exception when insufficient_privilege then raise notice '63c OK: captura no registra costos'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  delete from costos where empresa_id = e; get diagnostics n = row_count;
+  raise notice '63d costos borrados (esperado 0): %', n;
+
+  -- 64. Otra empresa no ve costos de A ni liga su costo a equipo de A
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  select count(*) into n from costos; raise notice '64 costos de A que ve otra empresa (esperado 0): %', n;
+  select c.id into otra from categorias_costo c join miembros m on m.empresa_id = c.empresa_id where m.usuario_id = auth.uid() limit 1;
+  begin insert into costos (empresa_id, mes, categoria_id, monto, unidad_id)
+      select empresa_id, '2026-10-01', otra, 10, u from miembros where usuario_id = auth.uid();
+    raise notice '64b FALLA: costo ligado a unidad de otra empresa';
+  exception when foreign_key_violation then raise notice '64b OK: el equipo del costo es de la misma empresa'; end;
+  select prorrateo_generales into t from parametros_empresa limit 1;
+  raise notice '64c prorrateo por defecto en partes iguales: %', case when t = 'partes_iguales' then 'OK' else 'FALLA' end;
+end $$;

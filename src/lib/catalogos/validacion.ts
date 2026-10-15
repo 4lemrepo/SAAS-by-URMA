@@ -5,7 +5,7 @@
  */
 import type { Campo, DefinicionCatalogo, OpcionReferencia } from "./definiciones";
 
-export type Registro = Record<string, string | number | null>;
+export type Registro = Record<string, string | number | boolean | null>;
 
 export type ResultadoRegistro =
   | { ok: true; datos: Registro }
@@ -51,7 +51,7 @@ export function parsearNumero(valor: unknown): number | null {
   return Number(t);
 }
 
-type ResultadoCampo = { valor: string | number | null } | { error: string };
+type ResultadoCampo = { valor: string | number | boolean | null } | { error: string };
 
 /** Opciones válidas de cada campo de referencia, por columna. */
 export type Referencias = Record<string, readonly OpcionReferencia[]>;
@@ -70,6 +70,14 @@ export function validarCampo(campo: Campo, crudo: unknown, opciones: readonly Op
     return { valor: Math.round(n * factor) / factor };
   }
 
+  if (campo.tipo === "booleano") {
+    if (typeof crudo === "boolean") return { valor: crudo };
+    const b = claveComparacion(crudo);
+    if (!b) return { valor: false };
+    if (["on", "true", "si", "1", "x"].includes(b)) return { valor: true };
+    if (["off", "false", "no", "0"].includes(b)) return { valor: false };
+    return { error: "Usa Sí o No" };
+  }
   const texto = normalizarTexto(crudo);
   if (campo.tipo === "referencia") {
     if (!texto) return campo.requerido ? { error: "Requerido" } : { valor: null };

@@ -9,6 +9,7 @@ export type ClaveCatalogo =
   | "dollies"
   | "tipos-remolque"
   | "categorias-gasto"
+  | "categorias-costo"
   | "operadores"
   | "clientes"
   | "rutas"
@@ -55,7 +56,13 @@ export interface CampoReferencia extends CampoBase {
   catalogo: ClaveCatalogo;
 }
 
-export type Campo = CampoTexto | CampoNumero | CampoOpcion | CampoReferencia;
+/** Sí o no (casilla). */
+export interface CampoBooleano extends CampoBase {
+  tipo: "booleano";
+  porDefecto: boolean;
+}
+
+export type Campo = CampoTexto | CampoNumero | CampoOpcion | CampoReferencia | CampoBooleano;
 
 /** Opción de un campo de referencia: id y cómo se muestra. */
 export interface OpcionReferencia {
@@ -83,6 +90,8 @@ export interface DefinicionCatalogo {
   calculadas?: readonly { columna: string; etiqueta: string }[];
   /** Columna con la que otro catálogo muestra este registro en una lista de opciones. */
   columnaEtiqueta: string;
+  /** Solo dueño y administración lo ven (p. ej. categorías de costo, que son pesos). */
+  soloAdmin?: boolean;
   orden: string;
 }
 
@@ -215,6 +224,31 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     columnasLista: ["nombre"],
     columnaEtiqueta: "nombre",
     orden: "nombre",
+  },
+  "categorias-costo": {
+    clave: "categorias-costo",
+    tabla: "categorias_costo",
+    titulo: "Categorías de costo",
+    singular: "categoría de costo",
+    conArticulo: "una categoría de costo",
+    descripcion: "Mantenimiento, llantas, seguro, oficina… y si entran en la rentabilidad.",
+    columnaActivo: "activo",
+    campos: [
+      { columna: "nombre", etiqueta: "Nombre", tipo: "texto", requerido: true, min: 2, max: 60 },
+      {
+        columna: "incluir_en_rentabilidad",
+        etiqueta: "Incluir en rentabilidad",
+        tipo: "booleano",
+        porDefecto: true,
+        ayuda: "Apagado: se registra pero no entra en los KPIs (p. ej. sueldo fijo e IMSS). Cambiarlo recalcula también meses pasados.",
+      },
+    ],
+    llaveUnica: ["nombre"],
+    mensajeDuplicado: "Ya existe esa categoría",
+    columnasLista: ["nombre", "incluir_en_rentabilidad"],
+    columnaEtiqueta: "nombre",
+    orden: "nombre",
+    soloAdmin: true,
   },
   operadores: {
     clave: "operadores",

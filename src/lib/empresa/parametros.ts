@@ -78,7 +78,7 @@ export function validarParametros(
     const r = validarCampo(campo, valores[campo.columna]);
     if ("error" in r) errores[campo.columna] = r.error;
     // Un prefijo vacío se guarda como "" (la columna no acepta null).
-    else datos[campo.columna] = campo.tipo === "texto" ? (r.valor ?? "") : r.valor;
+    else datos[campo.columna] = campo.tipo === "texto" ? String(r.valor ?? "") : (r.valor as number | null);
   }
   return Object.keys(errores).length ? { ok: false, errores } : { ok: true, datos };
 }

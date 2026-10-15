@@ -42,6 +42,23 @@ export function FormularioCatalogo({
               />
             );
           }
+          if (campo.tipo === "booleano") {
+            const actual = valores[campo.columna];
+            return (
+              <label key={campo.columna} className="flex items-start gap-2 text-sm sm:col-span-2">
+                <input
+                  type="checkbox"
+                  name={campo.columna}
+                  defaultChecked={actual === undefined || actual === "" ? campo.porDefecto : actual === "true" || actual === "on"}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-medium">{campo.etiqueta}</span>
+                  {campo.ayuda && <span className="block text-zinc-500">{campo.ayuda}</span>}
+                </span>
+              </label>
+            );
+          }
           if (campo.tipo === "opcion") {
             return (
               <Selector

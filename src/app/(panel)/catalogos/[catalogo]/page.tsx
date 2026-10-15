@@ -39,7 +39,7 @@ export default async function PaginaCatalogo({ params }: PageProps<"/catalogos/[
 }
 
 async function Contenido({ clave }: { clave: keyof typeof CATALOGOS }) {
-  const { empresa } = await usuarioConPermiso("verCatalogos");
+  const { empresa } = await usuarioConPermiso(CATALOGOS[clave].soloAdmin ? "editarCatalogos" : "verCatalogos");
   const [filas, referencias] = await Promise.all([
     leerCatalogo(clave, empresa.empresaId),
     leerReferencias(CATALOGOS[clave], empresa.empresaId),
