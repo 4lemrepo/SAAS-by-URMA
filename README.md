@@ -2,6 +2,27 @@
 
 [![Pruebas](https://github.com/4lemrepo/SAAS-by-URMA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/4lemrepo/SAAS-by-URMA/actions/workflows/ci.yml)
 
+## English summary
+
+**Diesel control for Mexican freight fleets.** It shows a fleet owner, every week, how many liters and pesos of diesel were lost per truck, driver and route.
+
+I run a 13-truck carrier in Guadalajara (URMA Logística). Diesel theft and untracked fuel were our biggest cost leak, so I'm building the tool I needed. URMA is the first customer; the target is fleets of 5–80 trucks.
+
+**Built so far**
+- Multi-tenant Postgres schema with row-level security per company and per role (owner, admin, data entry)
+- Trips with legs, fuel loads, expenses, rates, driver pay, closing and an audit log
+- Fuel reconciliation logic: theoretical vs. actual liters, traffic-light alerts, missing pesos, tank balance
+- Equipment and overhead cost allocation, plus a KPI dashboard with rankings, trends and Excel export
+- Catalog import from spreadsheets
+
+**Stack:** Next.js (App Router, TypeScript), Supabase (Postgres, Auth), Vercel. Business logic lives in pure functions covered by 155 Vitest tests. RLS security tests run against Postgres 16 in GitHub Actions.
+
+**Next:** photo-validated fuel loads and reconciliation on the dashboard.
+
+Built with Claude Code. The UI and code are in Spanish because the users are Mexican fleet operators.
+
+---
+
 Software para que una flotilla de carga sepa, cada semana, cuántos litros y cuántos pesos
 de diésel se perdieron por unidad, operador y ruta.
 
