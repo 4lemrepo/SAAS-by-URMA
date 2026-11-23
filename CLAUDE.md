@@ -4,7 +4,6 @@
 
 SaaS de control de diésel para flotillas de carga en México (5 a 80 unidades).
 Primer cliente: URMA Logística. Luego se comercializa a otros transportistas.
-Documento de producto: https://claude.ai/code/artifact/e2bffefb-b3d4-4377-a568-83c189371777
 
 ## Alcance del MVP (no construir nada fuera de esto sin que Alan lo pida)
 Catálogos, viajes, cargas de diésel (con foto del ticket o del medidor del tanque, desde
