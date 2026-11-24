@@ -8,6 +8,9 @@
  *   los cerrados.
  * - Utilidad del viaje (contribución) = ingreso − costo variable
  *   (diésel + gastos del viaje + pago al operador).
+ * - Los costos son el costo real: sin el IVA acreditable de lo que tiene
+ *   factura. `entradaConIva()` da la misma entrada con lo pagado con IVA, para
+ *   comparar contra un control que trae diésel y casetas con IVA.
  * - Costos fijos: costos de equipo de cada unidad + su parte de los generales
  *   (+ "equipo sin asignar" en el total de la flotilla). Los de categorías
  *   excluidas no entran en ningún KPI; se informan aparte.
@@ -44,15 +47,23 @@ export interface ViajeKpi {
   /** $ por tonelada (o su equivalente si la tarifa es fija). */
   tarifaPorTonelada: number | null;
   ingreso: number | null;
+  /** Diésel validado sin IVA acreditable. */
   costoDiesel: number;
   litros: number;
   /** Litros que debió consumir según rendimiento esperado (null si la unidad no tiene rendimiento). */
   litrosTeoricos: number | null;
-  /** Por nombre de categoría. */
+  /** Costo para rentabilidad por nombre de categoría. */
   gastosPorCategoria: Record<string, number>;
   gastosViaje: number;
   pagoOperador: number | null;
   costoVariable: number;
+  /** Lo mismo con lo pagado (con IVA), para la vista "mostrar con IVA". */
+  conIva: {
+    costoDiesel: number;
+    gastosPorCategoria: Record<string, number>;
+    gastosViaje: number;
+    costoVariable: number;
+  };
   mermaToneladas: number | null;
   mermaPesos: number | null;
   /** Un elemento por tramo que se desvió de su ruta más que la tolerancia. */
@@ -91,6 +102,19 @@ export interface Filtros {
   cliente?: string;
   ruta?: string;
   incluirAbiertos?: boolean;
+}
+
+/**
+ * La misma entrada, con lo pagado con IVA en vez del costo real: diésel,
+ * gastos del viaje y costos de unidad y generales. El ingreso no cambia
+ * (es subtotal sin IVA). Es lo que se ve con "mostrar con IVA".
+ */
+export function entradaConIva(e: EntradaKpis): EntradaKpis {
+  return {
+    ...e,
+    viajes: e.viajes.map((v) => ({ ...v, ...v.conIva })),
+    costos: e.costos.map((c) => ({ ...c, monto: c.total ?? c.monto })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +467,9 @@ export function calcularKpis(e: EntradaKpis, meses: readonly string[], f: Filtro
   const kmConLitros = suma(conLitros, (v) => v.kmVacio + v.kmCargado);
   const conTeoricos = conLitros.filter((v) => v.litrosTeoricos);
   const costoDiesel = suma(delPeriodo, (v) => v.costoDiesel);
-  const precioLitro = e.parametros.precioDiesel ?? div(costoDiesel, litros);
+  // Costo promedio por litro del periodo (el que se paga de verdad); si no hay
+  // cargas con pesos, el precio del parámetro.
+  const precioLitro = (costoDiesel > 0 ? div(costoDiesel, litros) : null) ?? e.parametros.precioDiesel;
   const litrosFaltantes = suma(conTeoricos, (v) => Math.max(0, v.litros - (v.litrosTeoricos ?? 0)));
 
   // Financieros

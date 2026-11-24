@@ -5,6 +5,7 @@
  * Un viaje = tramo VACÍO (A → B, lugar de carga) + tramo CARGADO (B → C,
  * lugar de descarga). Km de cada tramo = odómetro final − inicial.
  */
+import { desglosarIva, type Desglose, type TasaIva } from "@/lib/costos/iva";
 
 export type TipoTramo = "vacio" | "cargado";
 
@@ -64,7 +65,7 @@ export function flete(t: Tarifa, cargadas: number | null, descargadas: number | 
 export type EsquemaPago = "pct_subtotal" | "pct_flete" | "por_km" | "por_tonelada" | "fijo" | "sueldo_comision";
 
 export const NOMBRE_ESQUEMA_PAGO: Record<EsquemaPago, string> = {
-  pct_subtotal: "% del subtotal de la factura",
+  pct_subtotal: "% del subtotal (flete + cargos adicionales)",
   pct_flete: "% del flete",
   por_km: "Por km (cargado y vacío)",
   por_tonelada: "Por tonelada",
@@ -72,9 +73,14 @@ export const NOMBRE_ESQUEMA_PAGO: Record<EsquemaPago, string> = {
   sueldo_comision: "Sueldo base + comisión",
 };
 
+/** Base del "% del flete": peso cargado (tarifa × toneladas cargadas) o el flete facturado. */
+export type BaseFlete = "cargado" | "facturado";
+
 export interface ConfigPago {
   esquema: EsquemaPago;
   pct?: number | null;
+  /** Solo "% del flete"; por defecto peso cargado. */
+  baseFlete?: BaseFlete | null;
   tarifaKmCargado?: number | null;
   tarifaKmVacio?: number | null;
   tarifaTonelada?: number | null;
@@ -82,21 +88,42 @@ export interface ConfigPago {
 }
 
 /**
- * Pago al operador por el viaje. En "sueldo base + comisión" la comisión es un
- * % del subtotal; el sueldo base es mensual y se registra en Costos.
- * null si falta un dato para calcularlo.
+ * Flete con peso cargado: tarifa × toneladas cargadas, aunque el cliente se
+ * facture por peso descargado (base del pago al operador de URMA). Con tarifa
+ * fija es el mismo flete.
+ */
+export function fleteCargado(t: Tarifa, cargadas: number | null): number | null {
+  if (t.tipo === "fija") return t.tarifa;
+  return cargadas === null ? null : redondear(t.tarifa * cargadas);
+}
+
+/**
+ * Pago al operador por el viaje. null si falta un dato para calcularlo.
+ * - "% del subtotal" (y la comisión de "sueldo base + comisión"): % de flete +
+ *   cargos adicionales al cliente. El sueldo base es mensual y va en Costos.
+ * - "% del flete": % del flete con peso cargado (por defecto) o del facturado.
+ *   Los cargos adicionales no generan comisión.
  */
 export function pagoOperador(
   c: ConfigPago,
-  v: { flete: number | null; gastosFacturables: number; kmCargado: number; kmVacio: number; toneladas: number | null },
+  v: {
+    flete: number | null;
+    fleteCargado: number | null;
+    cargosAdicionales: number;
+    kmCargado: number;
+    kmVacio: number;
+    toneladas: number | null;
+  },
 ): number | null {
   const pct = (c.pct ?? 0) / 100;
   switch (c.esquema) {
     case "pct_subtotal":
     case "sueldo_comision":
-      return v.flete === null ? null : redondear(pct * (v.flete + v.gastosFacturables));
-    case "pct_flete":
-      return v.flete === null ? null : redondear(pct * v.flete);
+      return v.flete === null ? null : redondear(pct * (v.flete + v.cargosAdicionales));
+    case "pct_flete": {
+      const base = c.baseFlete === "facturado" ? v.flete : v.fleteCargado;
+      return base === null ? null : redondear(pct * base);
+    }
     case "por_km":
       return redondear((c.tarifaKmCargado ?? 0) * v.kmCargado + (c.tarifaKmVacio ?? 0) * v.kmVacio);
     case "por_tonelada":
@@ -112,16 +139,24 @@ export function pagoOperador(
 
 export interface CargaDiesel {
   litros: number;
+  /** Total del ticket (con IVA si lo trae). */
   importe: number | null;
+  /** Precio por litro como viene en el ticket. */
   precioLitro: number | null;
   estado: "pendiente" | "validada" | "rechazada";
+  tieneFactura: boolean;
+  tasaIva: TasaIva;
 }
 
-/** Pesos de una carga: su importe; si no, litros × su precio; si no, litros × precio del parámetro. */
-export function costoCarga(c: CargaDiesel, precioParametro: number | null): number | null {
-  if (c.importe !== null) return c.importe;
+/**
+ * Pesos de una carga: el importe del ticket; si no hay, litros × su precio; si
+ * no, litros × precio del parámetro (estimado). Con factura, el costo es sin el
+ * IVA acreditable. null si no hay con qué calcular.
+ */
+export function costoCarga(c: CargaDiesel, precioParametro: number | null): Desglose | null {
   const precio = c.precioLitro ?? precioParametro;
-  return precio === null ? null : redondear(c.litros * precio);
+  const total = c.importe ?? (precio === null ? null : redondear(c.litros * precio));
+  return total === null ? null : desglosarIva(total, c.tieneFactura, c.tasaIva);
 }
 
 // ---------------------------------------------------------------------------
@@ -130,8 +165,19 @@ export function costoCarga(c: CargaDiesel, precioParametro: number | null): numb
 
 export interface GastoViaje {
   categoria: string;
+  /** Folio del gasto (para el desglose). */
+  folio?: string;
+  /** Total pagado (con IVA si lo trae). */
   monto: number;
-  facturable: boolean;
+  /** IVA acreditable guardado (0 sin factura). */
+  iva: number;
+  cancelado: boolean;
+}
+
+export interface CargoAdicional {
+  concepto: string;
+  /** Subtotal sin IVA que se le cobra al cliente. */
+  monto: number;
   cancelado: boolean;
 }
 
@@ -141,6 +187,8 @@ export interface EntradaResumen {
   toneladasDescargadas: number | null;
   /** null si quien consulta no ve tarifas o el viaje aún no tiene tarifa. */
   tarifa: Tarifa | null;
+  /** Cargos adicionales al cliente (maniobras, estadías…); vacío si no ve tarifas. */
+  cargosAdicionales: CargoAdicional[];
   pago: ConfigPago | null;
   pagoManual: number | null;
   gastos: GastoViaje[];
@@ -148,25 +196,47 @@ export interface EntradaResumen {
   precioDieselParametro: number | null;
 }
 
+/** Un renglón del desglose de utilidad del viaje. */
+export interface RenglonUtilidad {
+  concepto: string;
+  monto: number | null;
+  tipo: "ingreso" | "costo" | "total";
+}
+
 export interface ResumenViaje {
   kmVacio: number;
   kmCargado: number;
   kmTotales: number;
   toneladasFacturadas: number | null;
+  /** Subtotal sin IVA: tarifa × toneladas facturadas (o la tarifa fija). */
   flete: number | null;
-  gastosFacturables: number;
-  /** Flete + gastos que se facturan al cliente (subtotal de la factura, sin impuestos). */
+  /** Σ cargos adicionales al cliente (sin IVA). */
+  cargosAdicionales: number;
+  /** Flete + cargos adicionales (subtotal de la factura, sin IVA). */
   ingreso: number | null;
-  gastosPropios: number;
+  /** Σ total pagado de los gastos (con IVA si lo traen). */
+  gastosTotal: number;
+  /** Σ costo para rentabilidad de los gastos (sin IVA acreditable). */
+  gastosCosto: number;
+  /** Costo para rentabilidad por categoría. */
   gastosPorCategoria: Record<string, number>;
+  /** Total pagado por categoría (con IVA). */
+  gastosPorCategoriaConIva: Record<string, number>;
   /** Litros de cargas validadas (las rechazadas no cuentan; las pendientes, aparte). */
   litros: number;
   litrosPendientes: number;
+  /** Diésel validado, costo para rentabilidad (sin IVA acreditable). */
   costoDiesel: number;
+  /** Diésel validado, lo pagado (con IVA). */
+  dieselTotal: number;
+  /** IVA acreditable de gastos y diésel. */
+  ivaAcreditable: number;
   pagoOperador: number | null;
-  /** Diésel + todos los gastos del viaje + pago al operador. */
+  /** Diésel + gastos del viaje + pago al operador, sin IVA acreditable. */
   costoVariable: number;
-  /** Utilidad de contribución: ingreso − costo variable. */
+  /** Igual, pero con lo pagado con IVA (para comparar contra un control que trae el IVA). */
+  costoVariableConIva: number;
+  /** Utilidad de contribución: ingreso − costo variable. No incluye costos fijos. */
   utilidad: number | null;
   /** Utilidad ÷ ingreso. */
   margenPct: number | null;
@@ -175,6 +245,8 @@ export interface ResumenViaje {
   mermaToneladas: number | null;
   mermaPct: number | null;
   mermaPesos: number | null;
+  /** Flete, cargos, ingreso, diésel, pago, cada gasto, costo variable y utilidad. */
+  renglones: RenglonUtilidad[];
 }
 
 export function resumirViaje(e: EntradaResumen): ResumenViaje {
@@ -183,26 +255,45 @@ export function resumirViaje(e: EntradaResumen): ResumenViaje {
   const kmCargado = kmDe("cargado");
 
   const vigentes = e.gastos.filter((g) => !g.cancelado);
-  const gastosFacturables = suma(vigentes.filter((g) => g.facturable).map((g) => g.monto));
-  const gastosPropios = suma(vigentes.filter((g) => !g.facturable).map((g) => g.monto));
+  const costoGasto = (g: GastoViaje) => redondear(g.monto - g.iva);
+  const gastosTotal = suma(vigentes.map((g) => g.monto));
+  const gastosCosto = suma(vigentes.map(costoGasto));
   const gastosPorCategoria: Record<string, number> = {};
-  for (const g of vigentes) gastosPorCategoria[g.categoria] = redondear((gastosPorCategoria[g.categoria] ?? 0) + g.monto);
+  const gastosPorCategoriaConIva: Record<string, number> = {};
+  for (const g of vigentes) {
+    gastosPorCategoria[g.categoria] = redondear((gastosPorCategoria[g.categoria] ?? 0) + costoGasto(g));
+    gastosPorCategoriaConIva[g.categoria] = redondear((gastosPorCategoriaConIva[g.categoria] ?? 0) + g.monto);
+  }
 
   const validadas = e.cargas.filter((c) => c.estado === "validada");
   const litros = suma(validadas.map((c) => c.litros));
   const litrosPendientes = suma(e.cargas.filter((c) => c.estado === "pendiente").map((c) => c.litros));
-  const costoDiesel = suma(validadas.map((c) => costoCarga(c, e.precioDieselParametro) ?? 0));
+  const desgloses = validadas.map((c) => costoCarga(c, e.precioDieselParametro));
+  const costoDiesel = suma(desgloses.map((d) => d?.costo ?? 0));
+  const dieselTotal = suma(desgloses.map((d) => d?.total ?? 0));
 
+  const cargos = e.cargosAdicionales.filter((c) => !c.cancelado);
+  const cargosAdicionales = suma(cargos.map((c) => c.monto));
   const tonFact = e.tarifa
     ? toneladasFacturadas(e.tarifa.facturaPor, e.toneladasCargadas, e.toneladasDescargadas)
     : (e.toneladasCargadas ?? null);
   const fleteViaje = e.tarifa ? flete(e.tarifa, e.toneladasCargadas, e.toneladasDescargadas) : null;
-  const ingreso = fleteViaje === null ? null : redondear(fleteViaje + gastosFacturables);
+  const ingreso = fleteViaje === null ? null : redondear(fleteViaje + cargosAdicionales);
   const pago =
     e.pagoManual ??
-    (e.pago ? pagoOperador(e.pago, { flete: fleteViaje, gastosFacturables, kmCargado, kmVacio, toneladas: tonFact }) : null);
+    (e.pago
+      ? pagoOperador(e.pago, {
+          flete: fleteViaje,
+          fleteCargado: e.tarifa ? fleteCargado(e.tarifa, e.toneladasCargadas) : null,
+          cargosAdicionales,
+          kmCargado,
+          kmVacio,
+          toneladas: tonFact,
+        })
+      : null);
 
-  const costoVariable = redondear(costoDiesel + gastosFacturables + gastosPropios + (pago ?? 0));
+  const costoVariable = redondear(costoDiesel + gastosCosto + (pago ?? 0));
+  const costoVariableConIva = redondear(dieselTotal + gastosTotal + (pago ?? 0));
   const utilidad = ingreso === null ? null : redondear(ingreso - costoVariable);
 
   const merma =
@@ -219,27 +310,48 @@ export function resumirViaje(e: EntradaResumen): ResumenViaje {
           : null
       : null;
 
+  const renglones: RenglonUtilidad[] = [
+    { concepto: "Flete: subtotal sin IVA (tarifa × toneladas)", monto: fleteViaje, tipo: "ingreso" },
+    ...cargos.map((c): RenglonUtilidad => ({ concepto: `Cargo adicional: ${c.concepto}`, monto: c.monto, tipo: "ingreso" })),
+    { concepto: "Ingreso (sin IVA)", monto: ingreso, tipo: "total" },
+    { concepto: "Diésel (costo sin IVA acreditable)", monto: costoDiesel, tipo: "costo" },
+    { concepto: "Pago al operador", monto: pago, tipo: "costo" },
+    ...vigentes.map((g): RenglonUtilidad => ({
+      concepto: `${g.categoria}${g.folio ? ` (${g.folio})` : ""}`,
+      monto: costoGasto(g),
+      tipo: "costo",
+    })),
+    { concepto: "Costo variable", monto: costoVariable, tipo: "total" },
+    { concepto: "Utilidad de contribución", monto: utilidad, tipo: "total" },
+  ];
+
   return {
     kmVacio,
     kmCargado,
     kmTotales: kmVacio + kmCargado,
     toneladasFacturadas: tonFact,
     flete: fleteViaje,
-    gastosFacturables,
+    cargosAdicionales,
     ingreso,
-    gastosPropios,
+    gastosTotal,
+    gastosCosto,
     gastosPorCategoria,
+    gastosPorCategoriaConIva,
     litros,
     litrosPendientes,
     costoDiesel,
+    dieselTotal,
+    ivaAcreditable: redondear(dieselTotal - costoDiesel + gastosTotal - gastosCosto),
     pagoOperador: pago,
     costoVariable,
+    costoVariableConIva,
     utilidad,
     margenPct: utilidad !== null && ingreso ? pct(utilidad, ingreso) : null,
     utilidadSobreCostoPct: utilidad !== null && costoVariable ? pct(utilidad, costoVariable) : null,
     mermaToneladas: merma,
     mermaPct: merma !== null && e.toneladasCargadas ? pct(merma, e.toneladasCargadas) : null,
     mermaPesos: merma !== null && tarifaPorTon !== null ? redondear(merma * tarifaPorTon) : null,
+    renglones,
   };
 }
 

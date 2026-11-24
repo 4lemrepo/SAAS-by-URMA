@@ -7,7 +7,8 @@ import { mesesDelCosto, sumarMeses } from "@/lib/costos/asignacion";
 import { pesos } from "@/lib/formato";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { formatearFecha, hoy } from "@/lib/viajes/fechas";
-import { BotonCancelarCosto, FormularioCosto } from "./formulario";
+import { tasaIva } from "@/lib/costos/iva";
+import { BotonCancelarCosto, FacturaCosto, FormularioCosto } from "./formulario";
 
 export const metadata: Metadata = { title: "Costos · Control Diésel" };
 
@@ -40,7 +41,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">[
   const [costos, categorias, unidades, remolques, dollies] = await Promise.all([
     // Un costo de hasta 60 meses atrás puede seguir aplicando este mes.
     db.from("costos").select("*").eq("empresa_id", e).lte("mes", `${mes}-01`).gte("mes", `${sumarMeses(`${mes}-01`, -59)}-01`).order("fecha", { ascending: false }),
-    db.from("categorias_costo").select("id, nombre, incluir_en_rentabilidad, activo").eq("empresa_id", e).order("nombre"),
+    db.from("categorias_costo").select("id, nombre, incluir_en_rentabilidad, activo, tiene_factura").eq("empresa_id", e).order("nombre"),
     db.from("unidades").select("id, numero_economico, activa").eq("empresa_id", e).order("numero_economico"),
     db.from("remolques").select("id, placas, numero_economico, activo").eq("empresa_id", e).order("placas"),
     db.from("dollies").select("id, numero_serie, numero_economico, activo").eq("empresa_id", e).order("numero_serie"),
@@ -60,8 +61,9 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">[
     }
     return "General de la empresa";
   };
+  // Lo que se reparte es el costo para rentabilidad (total − IVA acreditable).
   const delMes = (costos.data ?? [])
-    .map((c) => ({ ...c, esteMes: mesesDelCosto({ mes: c.mes, meses: c.meses, monto: Number(c.monto) }).find((m) => m.mes === mes)?.monto ?? 0 }))
+    .map((c) => ({ ...c, esteMes: mesesDelCosto({ mes: c.mes, meses: c.meses, monto: Number(c.costo) }).find((m) => m.mes === mes)?.monto ?? 0 }))
     .filter((c) => c.esteMes > 0);
   const vigentes = delMes.filter((c) => !c.cancelado);
   const incluidos = vigentes.filter((c) => categoria.get(c.categoria_id)?.incluir_en_rentabilidad !== false);
@@ -85,7 +87,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">[
 
       <FormularioCosto
         empresaId={e}
-        categorias={(categorias.data ?? []).filter((c) => c.activo).map((c) => ({ valor: c.id, etiqueta: c.nombre }))}
+        categorias={(categorias.data ?? []).filter((c) => c.activo).map((c) => ({ valor: c.id, etiqueta: c.nombre, tieneFactura: c.tiene_factura }))}
         equipos={[
           { titulo: "Tractos", opciones: (unidades.data ?? []).filter((u) => u.activa).map((u) => ({ valor: `u:${u.id}`, etiqueta: u.numero_economico })) },
           { titulo: "Remolques", opciones: (remolques.data ?? []).filter((r) => r.activo).map((r) => ({ valor: `r:${r.id}`, etiqueta: etiquetaRemolque(r) })) },
@@ -95,7 +97,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">[
 
       <div className="rounded-xl border border-zinc-200 p-3 text-sm dark:border-zinc-800">
         <p>
-          <strong>{pesos(suma(incluidos))}</strong> en rentabilidad este mes ({incluidos.length} costos)
+          <strong>{pesos(suma(incluidos))}</strong> en rentabilidad este mes ({incluidos.length} costos, sin IVA acreditable)
         </p>
         {excluidos.length > 0 && (
           <p className="text-zinc-500">
@@ -121,7 +123,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">[
                 <div>
                   <p className="font-medium">
                     {cat?.nombre} · {pesos(c.esteMes)}
-                    {c.meses > 1 && <span className="font-normal text-zinc-500"> (de {pesos(Number(c.monto))} en {c.meses} meses)</span>}
+                    {c.meses > 1 && <span className="font-normal text-zinc-500"> (de {pesos(Number(c.costo))} en {c.meses} meses)</span>}
                     {cat?.incluir_en_rentabilidad === false && (
                       <span className="ml-2 rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-normal dark:bg-zinc-700">no entra en rentabilidad</span>
                     )}
@@ -132,8 +134,15 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">[
                     {c.proveedor && ` · ${c.proveedor}`}
                     {c.numero_comprobante && ` · ${c.numero_comprobante}`}
                   </p>
+                  <p>
+                    Total {pesos(Number(c.monto))} · {c.tiene_factura ? `con factura (IVA ${tasaIva(c.tasa_iva)} %: ${pesos(Number(c.iva))})` : "sin factura"} ·{" "}
+                    <strong>Costo para rentabilidad: {pesos(Number(c.costo))}</strong>
+                  </p>
                 </div>
-                <BotonCancelarCosto id={c.id} cancelado={c.cancelado} />
+                <div className="flex flex-col items-end gap-1">
+                  <BotonCancelarCosto id={c.id} cancelado={c.cancelado} />
+                  {!c.cancelado && <FacturaCosto id={c.id} tieneFactura={c.tiene_factura} tasa={tasaIva(c.tasa_iva)} />}
+                </div>
               </li>
             );
           })}

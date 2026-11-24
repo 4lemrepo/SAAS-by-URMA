@@ -1,6 +1,7 @@
 /**
  * Filas para exportar viajes a Excel. Sin permiso de tarifas no salen tarifa,
- * ingreso, pago al operador ni utilidad.
+ * ingreso, pago al operador ni utilidad. Los pesos de diésel y gastos son el
+ * costo para rentabilidad (sin IVA acreditable); "pagado" es con IVA.
  */
 import type { ResumenViaje } from "./calculos";
 import { formatearFechaHora } from "./fechas";
@@ -32,10 +33,10 @@ export function filasExportacion(viajes: readonly ViajeParaExportar[], veTarifas
     "Folio", "Estado", "Salida", "Llegada", "Unidad", "Armado", "Operador", "Cliente", "Producto",
     "Tramo vacío", "Km vacío", "Tramo cargado", "Km cargado", "Km totales",
     "Ton. cargadas", "Ton. descargadas",
-    ...(veTarifas ? ["Tarifa", "Flete", "Ingreso"] : []),
-    "Litros", "Diésel $",
+    ...(veTarifas ? ["Tarifa", "Flete", "Cargos adicionales", "Ingreso"] : []),
+    "Litros", "Diésel pagado $", "Diésel $",
     ...categorias.map((c) => `Gasto: ${c}`),
-    "Gastos totales",
+    "Gastos pagados", "Gastos", "IVA acreditable",
     ...(veTarifas ? ["Pago al operador", "Costo variable", "Utilidad", "Margen %"] : []),
   ];
   const tramo = (v: ViajeParaExportar, tipo: "vacio" | "cargado") => {
@@ -50,11 +51,11 @@ export function filasExportacion(viajes: readonly ViajeParaExportar[], veTarifas
       tramo(v, "vacio"), r.kmVacio, tramo(v, "cargado"), r.kmCargado, r.kmTotales,
       v.toneladas_cargadas, v.toneladas_descargadas,
       ...(veTarifas
-        ? [v.finanzas ? `${v.finanzas.tarifa}${v.finanzas.tipo_tarifa === "por_tonelada" ? " /t" : " fija"}` : null, r.flete, r.ingreso]
+        ? [v.finanzas ? `${v.finanzas.tarifa}${v.finanzas.tipo_tarifa === "por_tonelada" ? " /t" : " fija"}` : null, r.flete, r.cargosAdicionales, r.ingreso]
         : []),
-      r.litros, r.costoDiesel,
+      r.litros, r.dieselTotal, r.costoDiesel,
       ...categorias.map((c) => r.gastosPorCategoria[c] ?? null),
-      Math.round((r.gastosFacturables + r.gastosPropios) * 100) / 100,
+      r.gastosTotal, r.gastosCosto, r.ivaAcreditable,
       ...(veTarifas ? [r.pagoOperador, r.costoVariable, r.utilidad, r.margenPct] : []),
     ];
   });

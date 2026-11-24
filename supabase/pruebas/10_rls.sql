@@ -606,7 +606,7 @@ begin
   update miembros set ve_tarifas = false where usuario_id = '00000000-0000-0000-0000-0000000000a2';
 
   -- 52. Gastos con folio propio y categorías precargadas
-  select count(*) into n from categorias_gasto where empresa_id = e; raise notice '52 categorías de gasto precargadas (esperado 12): %', n;
+  select count(*) into n from categorias_gasto where empresa_id = e; raise notice '52 categorías de gasto precargadas (esperado 13): %', n;
   select id into cat from categorias_gasto where empresa_id = e and nombre = 'Casetas';
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
   insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto, forma_pago, numero_comprobante)
@@ -781,4 +781,71 @@ begin
   exception when foreign_key_violation then raise notice '64b OK: el equipo del costo es de la misma empresa'; end;
   select prorrateo_generales into t from parametros_empresa limit 1;
   raise notice '64c prorrateo por defecto en partes iguales: %', case when t = 'partes_iguales' then 'OK' else 'FALLA' end;
+end $$;
+
+-- ---------- Montos e impuestos (migración 20261123000000) ----------
+do $$
+declare n int; t text; x numeric; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  f uuid := (select v from ctx where k='fA'); eb uuid; u uuid; vj uuid; cat uuid; carga uuid;
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  -- 70. "¿Tiene factura?" por defecto por categoría
+  select string_agg(nombre || '=' || tiene_factura, ', ' order by nombre) into t from categorias_gasto
+  where empresa_id = e and nombre in ('Casetas', 'Urea (DEF)', 'Refacciones', 'Reparaciones en ruta', 'Viáticos/comidas', 'Propinas', 'Otros');
+  raise notice '70 factura por defecto en gastos: %', case when t = 'Casetas=true, Otros=false, Propinas=false, Refacciones=true, Reparaciones en ruta=true, Urea (DEF)=true, Viáticos/comidas=false' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from categorias_costo where empresa_id = e and tiene_factura = (nombre not in ('Sueldo y prestaciones del operador', 'Otros'));
+  raise notice '70b factura por defecto en categorías de costo (esperado 13): %', n;
+
+  -- 71. Gasto con factura: se guarda total e IVA; el costo es total − IVA
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e, u, o, now()) returning id into vj;
+  select id into cat from categorias_gasto where empresa_id = e and nombre = 'Casetas';
+  insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto, tiene_factura, tasa_iva, iva) values (e, vj, cat, 1160, true, 16, 160);
+  select costo into x from gastos_viaje where viaje_id = vj;
+  raise notice '71 costo para rentabilidad del gasto (esperado 1000): %', x::int;
+  begin insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto, tiene_factura, iva) values (e, vj, cat, 100, false, 16);
+    raise notice '71b FALLA: IVA sin factura';
+  exception when check_violation then raise notice '71b OK: sin factura no hay IVA'; end;
+  begin insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto, tiene_factura, tasa_iva, iva) values (e, vj, cat, 100, true, 10, 9);
+    raise notice '71c FALLA: tasa de IVA inventada';
+  exception when check_violation then raise notice '71c OK: solo tasas 16, 8 y 0'; end;
+  begin insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto, tiene_factura, iva) values (e, vj, cat, 100, true, 200);
+    raise notice '71d FALLA: IVA mayor que el total';
+  exception when check_violation then raise notice '71d OK: el IVA no pasa del total'; end;
+
+  -- 72. Carga con factura y precio de 4 decimales; sin importe no hay costo guardado
+  insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros, precio_litro, importe, tiene_factura, iva)
+    values (e, vj, u, o, f, 1299.44, 27.0117, 35100, true, 4841.38) returning id into carga;
+  select costo::text || ' ' || precio_litro::text into t from cargas_diesel where id = carga;
+  raise notice '72 costo y precio de la carga: %', case when t = '30258.62 27.0117' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros, tiene_factura) values (e, vj, u, o, f, 50, true) returning id into carga;
+  select count(*) into n from cargas_diesel where id = carga and costo is null and iva = 0;
+  raise notice '72b carga sin importe: costo se estima en la app (esperado 1): %', n;
+
+  -- 73. Cargos adicionales: solo quien ve tarifas; nadie los borra; no en viajes cerrados
+  insert into cargos_adicionales (empresa_id, viaje_id, concepto, monto) values (e, vj, 'Estadía', 1500);
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from cargos_adicionales; raise notice '73 cargos adicionales que ve captura sin permiso (esperado 0): %', n;
+  begin insert into cargos_adicionales (empresa_id, viaje_id, concepto, monto) values (e, vj, 'Maniobra', 800);
+    raise notice '73b FALLA: captura sin permiso agregó un cargo';
+  exception when insufficient_privilege then raise notice '73b OK: captura sin permiso no agrega cargos'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  select count(*) into n from cargos_adicionales; raise notice '73c cargos de A que ve otra empresa (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  delete from cargos_adicionales where viaje_id = vj; get diagnostics n = row_count;
+  raise notice '73d cargos borrados (esperado 0): %', n;
+  select count(*) into n from bitacora where viaje_id = vj and tabla = 'cargos_adicionales';
+  raise notice '73e el cargo aparece en la bitácora (esperado 1): %', n;
+  begin insert into cargos_adicionales (empresa_id, viaje_id, concepto, monto) values (e, (select v from ctx where k='viajeCerrado'), 'Estadía', 100);
+    raise notice '73f FALLA: cargo en viaje cerrado';
+  exception when raise_exception then raise notice '73f OK: no se agregan cargos a un viaje cerrado'; end;
+
+  -- 74. Pago por defecto de una empresa nueva: 12.6 % del flete con peso cargado
+  -- (Flotilla Y, del usuario d1, se creó después de las migraciones)
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',false);
+  select empresa_id into eb from miembros where usuario_id = auth.uid();
+  select esquema::text || ' ' || base_flete || ' ' || pct::text into t from pago_operador_config where empresa_id = eb and operador_id is null;
+  raise notice '74 pago por defecto: %', case when t = 'pct_flete cargado 12.60' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from categorias_gasto where empresa_id = eb and nombre = 'Propinas' and not tiene_factura;
+  raise notice '74b empresa nueva con Propinas sin factura (esperado 1): %', n;
 end $$;

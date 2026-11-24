@@ -2,7 +2,8 @@ import "server-only";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { leerEquipo } from "@/lib/catalogos/datos";
 import { ZONA } from "./fechas";
-import { resumirViaje, type EsquemaPago, type ResumenViaje, type TipoTramo } from "./calculos";
+import { tasaIva, type TasaIva } from "@/lib/costos/iva";
+import { resumirViaje, type BaseFlete, type EsquemaPago, type ResumenViaje, type TipoTramo } from "./calculos";
 
 type ClienteSupabase = Awaited<ReturnType<typeof crearClienteServidor>>;
 
@@ -25,7 +26,13 @@ export interface Carga {
   fecha: string;
   litros: number;
   precio_litro: number | null;
+  /** Total del ticket (con IVA si lo trae). */
   importe: number | null;
+  tiene_factura: boolean;
+  tasa_iva: TasaIva;
+  iva: number;
+  /** importe − IVA; null sin importe. */
+  costo: number | null;
   estado: "pendiente" | "validada" | "rechazada";
   fuente_id: string;
   fuente: string;
@@ -41,20 +48,35 @@ export interface Gasto {
   fecha: string;
   categoria_id: string;
   categoria: string;
+  /** Total pagado (con IVA si lo trae). */
   monto: number;
+  tiene_factura: boolean;
+  tasa_iva: TasaIva;
+  iva: number;
+  /** Costo para rentabilidad: monto − IVA acreditable. */
+  costo: number;
   forma_pago: string;
   proveedor: string | null;
   numero_comprobante: string | null;
   comprobante_path: string | null;
-  facturable: boolean;
+  /** Antes se marcaba "se factura al cliente" (ya no se usa; para revisión). */
+  facturable_anterior: boolean;
   cancelado: boolean;
   notas: string | null;
+}
+export interface CargoAdicional {
+  id: string;
+  concepto: string;
+  /** Subtotal sin IVA. */
+  monto: number;
+  cancelado: boolean;
 }
 export interface Finanzas {
   tipo_tarifa: "por_tonelada" | "fija";
   tarifa: number;
   factura_por: "cargado" | "descargado";
   pago_esquema: EsquemaPago;
+  pago_base_flete: BaseFlete;
   pago_pct: number | null;
   pago_tarifa_km_cargado: number | null;
   pago_tarifa_km_vacio: number | null;
@@ -96,6 +118,8 @@ export interface ViajeCompleto extends Viaje {
   tramos: Tramo[];
   cargas: Carga[];
   gastos: Gasto[];
+  /** Vacío si quien consulta no ve tarifas. */
+  cargosAdicionales: CargoAdicional[];
   /** null si quien consulta no ve tarifas, o si el viaje aún no tiene tarifa. */
   finanzas: Finanzas | null;
   resumen: ResumenViaje;
@@ -172,18 +196,23 @@ export async function leerViajes(
   if (!viajes.length) return [];
   const ids = viajes.map((v) => v.id);
 
-  const [tramos, cargas, gastos, finanzas, categorias, fuentes, catalogos, parametros, equipo, armados] = await Promise.all([
+  const [tramos, cargas, gastos, finanzas, cargos, categorias, fuentes, catalogos, parametros, equipo, armados] = await Promise.all([
     porLotes<Tramo & { viaje_id: string }>(ids, (l) =>
       db.from("tramos_viaje").select("id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final, km, ruta_id, km_ruta, motivo_desvio, nota_desvio").in("viaje_id", l),
     ),
     porLotes<Omit<Carga, "fuente"> & { viaje_id: string }>(ids, (l) =>
-      db.from("cargas_diesel").select("id, viaje_id, fecha, litros, precio_litro, importe, estado, fuente_id, folio_ticket, odometro, foto_ticket_path, capturado_por, autovalidada").in("viaje_id", l).order("fecha"),
+      db.from("cargas_diesel").select("id, viaje_id, fecha, litros, precio_litro, importe, tiene_factura, tasa_iva, iva, costo, estado, fuente_id, folio_ticket, odometro, foto_ticket_path, capturado_por, autovalidada").in("viaje_id", l).order("fecha"),
     ),
     porLotes<Omit<Gasto, "categoria"> & { viaje_id: string }>(ids, (l) =>
-      db.from("gastos_viaje").select("id, viaje_id, folio, fecha, categoria_id, monto, forma_pago, proveedor, numero_comprobante, comprobante_path, facturable, cancelado, notas").in("viaje_id", l).order("fecha"),
+      db.from("gastos_viaje").select("id, viaje_id, folio, fecha, categoria_id, monto, tiene_factura, tasa_iva, iva, costo, forma_pago, proveedor, numero_comprobante, comprobante_path, facturable_anterior, cancelado, notas").in("viaje_id", l).order("fecha"),
     ),
     veTarifas
       ? porLotes<Finanzas & { viaje_id: string }>(ids, (l) => db.from("viajes_finanzas").select("*").in("viaje_id", l))
+      : Promise.resolve([]),
+    veTarifas
+      ? porLotes<CargoAdicional & { viaje_id: string }>(ids, (l) =>
+          db.from("cargos_adicionales").select("id, viaje_id, concepto, monto, cancelado").in("viaje_id", l).order("creado_en"),
+        )
       : Promise.resolve([]),
     db.from("categorias_gasto").select("id, nombre").eq("empresa_id", empresaId),
     db.from("fuentes_diesel").select("id, nombre").eq("empresa_id", empresaId),
@@ -210,12 +239,27 @@ export async function leerViajes(
   const tramosDe = agrupar(tramos);
   const cargasDe = agrupar(cargas);
   const gastosDe = agrupar(gastos);
+  const cargosDe = agrupar(cargos);
   const finanzasDe = new Map(finanzas.map((f) => [f.viaje_id, f]));
 
   return viajes.map((v) => {
     const t = (tramosDe.get(v.id) ?? []).sort((a, b) => (a.tipo === "vacio" ? -1 : 1) - (b.tipo === "vacio" ? -1 : 1));
-    const c = (cargasDe.get(v.id) ?? []).map((x) => ({ ...x, fuente: nombreFuente.get(x.fuente_id) ?? "" }));
-    const g = (gastosDe.get(v.id) ?? []).map((x) => ({ ...x, categoria: nombreCategoria.get(x.categoria_id) ?? "" }));
+    const c = (cargasDe.get(v.id) ?? []).map((x) => ({
+      ...x,
+      tasa_iva: tasaIva(x.tasa_iva),
+      iva: Number(x.iva),
+      costo: num(x.costo),
+      fuente: nombreFuente.get(x.fuente_id) ?? "",
+    }));
+    const g = (gastosDe.get(v.id) ?? []).map((x) => ({
+      ...x,
+      monto: Number(x.monto),
+      tasa_iva: tasaIva(x.tasa_iva),
+      iva: Number(x.iva),
+      costo: Number(x.costo),
+      categoria: nombreCategoria.get(x.categoria_id) ?? "",
+    }));
+    const ca = (cargosDe.get(v.id) ?? []).map((x) => ({ ...x, monto: Number(x.monto) }));
     const f = finanzasDe.get(v.id) ?? null;
     const a = v.armado_id ? armadoPorId.get(v.armado_id) : undefined;
     return {
@@ -230,15 +274,18 @@ export async function leerViajes(
       tramos: t,
       cargas: c,
       gastos: g,
+      cargosAdicionales: ca,
       finanzas: f,
       resumen: resumirViaje({
         tramos: t.map((x) => ({ tipo: x.tipo, odometroInicial: Number(x.odometro_inicial), odometroFinal: Number(x.odometro_final) })),
         toneladasCargadas: num(v.toneladas_cargadas),
         toneladasDescargadas: num(v.toneladas_descargadas),
         tarifa: f ? { tipo: f.tipo_tarifa, tarifa: Number(f.tarifa), facturaPor: f.factura_por } : null,
+        cargosAdicionales: ca.map((x) => ({ concepto: x.concepto, monto: x.monto, cancelado: x.cancelado })),
         pago: f
           ? {
               esquema: f.pago_esquema,
+              baseFlete: f.pago_base_flete,
               pct: num(f.pago_pct),
               tarifaKmCargado: num(f.pago_tarifa_km_cargado),
               tarifaKmVacio: num(f.pago_tarifa_km_vacio),
@@ -247,8 +294,15 @@ export async function leerViajes(
             }
           : null,
         pagoManual: f ? num(f.pago_operador_manual) : null,
-        gastos: g.map((x) => ({ categoria: x.categoria, monto: Number(x.monto), facturable: x.facturable, cancelado: x.cancelado })),
-        cargas: c.map((x) => ({ litros: Number(x.litros), importe: num(x.importe), precioLitro: num(x.precio_litro), estado: x.estado })),
+        gastos: g.map((x) => ({ categoria: x.categoria, folio: x.folio, monto: x.monto, iva: x.iva, cancelado: x.cancelado })),
+        cargas: c.map((x) => ({
+          litros: Number(x.litros),
+          importe: num(x.importe),
+          precioLitro: num(x.precio_litro),
+          estado: x.estado,
+          tieneFactura: x.tiene_factura,
+          tasaIva: x.tasa_iva,
+        })),
         precioDieselParametro: num(precio),
       }),
     };

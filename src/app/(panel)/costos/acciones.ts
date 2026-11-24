@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { puede } from "@/lib/auth/permisos";
 import { sesionDeAccion } from "@/lib/auth/sesion";
+import { desglosarIva, tasaIva, type TasaIva } from "@/lib/costos/iva";
 import { validarCosto } from "@/lib/costos/validacion";
 
 export interface EstadoCosto {
@@ -41,6 +42,20 @@ export async function cancelarCosto(id: string, cancelado: boolean): Promise<str
   const sesion = await sesionAdmin();
   if (!sesion) return "Solo dueño y administración cambian costos";
   const { error } = await sesion.supabase.from("costos").update({ cancelado }).eq("id", id).eq("empresa_id", sesion.empresa.empresaId);
+  if (error) return "No se pudo cambiar el costo";
+  refresh();
+  return null;
+}
+
+/** "¿Tiene factura?" de un costo ya registrado: recalcula el IVA de su total. */
+export async function cambiarFacturaCosto(id: string, tieneFactura: boolean, tasa: TasaIva): Promise<string | null> {
+  const sesion = await sesionAdmin();
+  if (!sesion) return "Solo dueño y administración cambian costos";
+  const { data: costo } = await sesion.supabase.from("costos").select("monto").eq("id", id).eq("empresa_id", sesion.empresa.empresaId).maybeSingle();
+  if (!costo) return "No se encontró el costo";
+  const t = tasaIva(tasa);
+  const { iva } = desglosarIva(Number(costo.monto), tieneFactura, t);
+  const { error } = await sesion.supabase.from("costos").update({ tiene_factura: tieneFactura, tasa_iva: t, iva }).eq("id", id).eq("empresa_id", sesion.empresa.empresaId);
   if (error) return "No se pudo cambiar el costo";
   refresh();
   return null;

@@ -27,10 +27,11 @@ const viaje: ViajeParaExportar = {
     toneladasCargadas: 80,
     toneladasDescargadas: 79.5,
     tarifa: { tipo: "por_tonelada", tarifa: 650, facturaPor: "cargado" },
+    cargosAdicionales: [{ concepto: "Estadía", monto: 1500, cancelado: false }],
     pago: { esquema: "fijo", montoFijo: 5000 },
     pagoManual: null,
-    gastos: [{ categoria: "Casetas", monto: 1000, facturable: false, cancelado: false }],
-    cargas: [{ litros: 400, importe: 10000, precioLitro: null, estado: "validada" }],
+    gastos: [{ categoria: "Casetas", monto: 1160, iva: 160, cancelado: false }],
+    cargas: [{ litros: 400, importe: 11600, precioLitro: null, estado: "validada", tieneFactura: true, tasaIva: 16 }],
     precioDieselParametro: null,
   }),
 };
@@ -44,16 +45,20 @@ describe("filasExportacion", () => {
       "Tramo cargado": "B → C",
       "Km totales": 500,
       Tarifa: "650 /t",
-      Ingreso: 52000,
+      "Cargos adicionales": 1500,
+      Ingreso: 53500,
       "Gasto: Casetas": 1000,
+      "Gastos pagados": 1160,
+      "Diésel pagado $": 11600,
       "Diésel $": 10000,
+      "IVA acreditable": 1760,
       "Pago al operador": 5000,
-      Utilidad: 36000,
+      Utilidad: 37500,
     });
   });
   it("sin permiso no salen tarifa, ingreso, pago ni utilidad", () => {
     const { encabezados } = filasExportacion([viaje], false);
-    for (const c of ["Tarifa", "Flete", "Ingreso", "Pago al operador", "Utilidad", "Margen %"]) expect(encabezados).not.toContain(c);
+    for (const c of ["Tarifa", "Flete", "Cargos adicionales", "Ingreso", "Pago al operador", "Utilidad", "Margen %"]) expect(encabezados).not.toContain(c);
     expect(encabezados).toContain("Gasto: Casetas");
   });
 });

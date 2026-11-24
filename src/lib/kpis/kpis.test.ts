@@ -1,7 +1,7 @@
 // Datos inventados: nunca usar datos reales de clientes en pruebas.
 import { describe, expect, it } from "vitest";
 import type { Costo } from "@/lib/costos/asignacion";
-import { calcularKpis, mesDe, mesesAnteriores, mesesEntre, tendencia, variacion, type EntradaKpis, type ViajeKpi } from "./index";
+import { calcularKpis, entradaConIva, mesDe, mesesAnteriores, mesesEntre, tendencia, variacion, type EntradaKpis, type ViajeKpi } from "./index";
 
 const viaje = (o: Partial<ViajeKpi>): ViajeKpi => ({
   id: "v",
@@ -35,6 +35,8 @@ const viaje = (o: Partial<ViajeKpi>): ViajeKpi => ({
   mermaToneladas: 0.5,
   mermaPesos: 500,
   desvios: [],
+  // Con IVA: diésel 15 000 × 1.16 y casetas 3 000 × 1.16
+  conIva: { costoDiesel: 17_400, gastosPorCategoria: { Casetas: 3_480, "Urea (DEF)": 200 }, gastosViaje: 3_680, costoVariable: 26_120 },
   ...o,
 });
 
@@ -66,6 +68,7 @@ const entrada: EntradaKpis = {
       ingreso: 20_000,
       costoVariable: 25_000,
       costoDiesel: 18_000,
+      conIva: { costoDiesel: 17_400, gastosPorCategoria: { Casetas: 3_480, "Urea (DEF)": 200 }, gastosViaje: 3_680, costoVariable: 26_120 },
       litros: 800,
       litrosTeoricos: 400,
       mermaToneladas: null,
@@ -125,7 +128,8 @@ describe("calcularKpis (octubre)", () => {
     expect(k.diesel.kmPorLitro).toBeCloseTo(2000 / 1400);
     expect(k.diesel.kmPorLitroEsperado).toBeCloseTo(2000 / 900);
     expect(k.diesel.litrosFaltantes).toBe(500);
-    expect(k.diesel.pesosFaltantes).toBe(12_500);
+    // A costo promedio del periodo: 33 000 $ ÷ 1 400 L
+    expect(k.diesel.pesosFaltantes).toBe(11_785.71);
     expect(k.diesel.dieselPorKm).toBe(16.5);
   });
 
@@ -189,6 +193,28 @@ describe("calcularKpis (octubre)", () => {
     expect(k.tiemposPorCliente.find((t) => t.cliente === "Cliente Dos")).toMatchObject({ horasCargaPromedio: 10, viajesSobreLimite: 1 });
     const tipos = k.alertas.map((a) => a.tipo).sort();
     expect(tipos).toEqual(["desvio_sin_motivo", "estadia", "perdida", "rendimiento", "rendimiento", "viaje_abierto"]);
+  });
+});
+
+describe("pesos faltantes sin cargas con pesos", () => {
+  it("usa el precio del diésel del parámetro", () => {
+    const sinPesos = { ...entrada, viajes: entrada.viajes.map((v) => ({ ...v, costoDiesel: 0 })) };
+    expect(calcularKpis(sinPesos, ["2026-10"]).diesel.pesosFaltantes).toBe(12_500);
+  });
+});
+
+describe("mostrar con IVA", () => {
+  const conIva = entradaConIva({ ...entrada, costos: [costo({ monto: 6_000, total: 6_960, unidadId: "T1" }), costo({ monto: 2_000, categoriaId: "oficina" })] });
+  const k = calcularKpis(conIva, ["2026-10"]);
+  it("diésel, gastos y costos con lo pagado (con IVA); el ingreso no cambia", () => {
+    expect(k.diesel.costoDiesel).toBe(34_800);
+    expect(k.financieros.gastosViaje).toBe(7_360);
+    expect(k.financieros.gastosPorCategoria.Casetas).toBe(6_960);
+    expect(k.financieros.costosEquipo).toBe(6_960);
+    // Un costo sin total (sin factura) usa su monto
+    expect(k.financieros.costosGenerales).toBe(2_000);
+    expect(k.financieros.ingreso).toBe(60_000);
+    expect(k.financieros.costoVariable).toBe(52_240);
   });
 });
 

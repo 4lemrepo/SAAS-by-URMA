@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { numero, pesos, porcentaje } from "@/lib/formato";
-import { calcularKpis, mesesAnteriores, mesesEntre, tendencia, variacion, type Filtros, type FilaGrupo, type Kpis } from "@/lib/kpis";
+import { calcularKpis, entradaConIva, mesesAnteriores, mesesEntre, tendencia, variacion, type Filtros, type FilaGrupo, type Kpis } from "@/lib/kpis";
 import { cargarEntradaKpis } from "@/lib/kpis/datos";
 import { hojasTablero } from "@/lib/kpis/exportacion";
 import { COLUMNAS_RANKING, GRUPOS_INDICADORES, PRINCIPALES, TODOS_LOS_INDICADORES, type Formato, type Indicador } from "@/lib/kpis/indicadores";
@@ -32,7 +32,10 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
     incluirAbiertos: uno("abiertos") === "1",
   };
 
-  const entrada = await cargarEntradaKpis(empresaId, desde, hasta);
+  // "Mostrar con IVA": diésel, gastos y costos con lo pagado, para comparar contra un control que trae el IVA.
+  const conIva = uno("iva") === "1";
+  const cargada = await cargarEntradaKpis(empresaId, desde, hasta);
+  const entrada = conIva ? entradaConIva(cargada) : cargada;
   const meses = mesesEntre(desde, hasta);
   const anteriores = mesesAnteriores(desde, meses.length);
   const k = calcularKpis(entrada, meses, filtros);
@@ -75,6 +78,10 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           <input type="checkbox" name="abiertos" value="1" defaultChecked={filtros.incluirAbiertos} />
           Incluir abiertos
         </label>
+        <label className="flex items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" name="iva" value="1" defaultChecked={conIva} />
+          Mostrar con IVA
+        </label>
         <button type="submit" className="rounded-md border border-zinc-300 px-4 py-2 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
           Ver
         </button>
@@ -83,11 +90,18 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-zinc-500">
           {titulo} · contra {anteriores[0] === anteriores.at(-1) ? anteriores[0] : `${anteriores[0]} a ${anteriores.at(-1)}`} ·{" "}
-          {filtros.incluirAbiertos ? "viajes abiertos y cerrados" : "solo viajes cerrados"}
+          {filtros.incluirAbiertos ? "viajes abiertos y cerrados" : "solo viajes cerrados"} ·{" "}
+          {conIva ? "costos con IVA (lo pagado)" : "costo real, sin IVA acreditable"}
         </p>
-        <ExportarTablero hojas={hojasTablero(k, ant, tend, `Tablero ${titulo}`)} nombreArchivo={`tablero-${titulo.replace(/ /g, "")}.xlsx`} />
+        <ExportarTablero hojas={hojasTablero(k, ant, tend, `Tablero ${titulo}`)} nombreArchivo={`tablero-${titulo.replace(/ /g, "")}${conIva ? "-con-iva" : ""}.xlsx`} />
       </div>
 
+      {conIva && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+          Con IVA: diésel, gastos y costos son lo pagado, incluido el IVA que se acredita. Sirve para comparar contra un Excel que
+          trae diésel y casetas con IVA; la utilidad real es la que se ve sin esta opción.
+        </p>
+      )}
       {k.sinCostosFijos && (
         <p className="rounded-md bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-800">
           Con filtro de operador, cliente o ruta se ve la contribución (ingreso − costo variable): los costos fijos no son de un

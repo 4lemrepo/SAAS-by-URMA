@@ -7,6 +7,7 @@ describe("validarConfigPago", () => {
       ok: true,
       datos: {
         esquema: "pct_subtotal",
+        base_flete: "cargado",
         pct: 12.6,
         tarifa_km_cargado: null,
         tarifa_km_vacio: null,
@@ -21,6 +22,15 @@ describe("validarConfigPago", () => {
     expect(!r.ok && r.errores).toEqual({ tarifa_km_vacio: "Requerido" });
     expect(validarConfigPago({ esquema: "pct_flete", pct: "120" }).ok).toBe(false);
     expect(validarConfigPago({ esquema: "nada" }).ok).toBe(false);
+  });
+  it("% del flete: base peso cargado por defecto, o facturado", () => {
+    const r = validarConfigPago({ esquema: "pct_flete", pct: "12.6" });
+    expect(r.ok && r.datos.base_flete).toBe("cargado");
+    const f = validarConfigPago({ esquema: "pct_flete", pct: "12.6", base_flete: "facturado" });
+    expect(f.ok && f.datos.base_flete).toBe("facturado");
+    // En otros esquemas no aplica
+    const s = validarConfigPago({ esquema: "pct_subtotal", pct: "12.6", base_flete: "facturado" });
+    expect(s.ok && s.datos.base_flete).toBe("cargado");
   });
   it("sueldo + comisión: el sueldo es opcional, la comisión no", () => {
     expect(validarConfigPago({ esquema: "sueldo_comision", pct: "5" }).ok).toBe(true);
@@ -44,8 +54,9 @@ describe("configParaOperador", () => {
 
 describe("describirPago", () => {
   it("resume el esquema", () => {
-    const base = { pct: null, tarifa_km_cargado: null, tarifa_km_vacio: null, tarifa_tonelada: null, monto_fijo: null, sueldo_base_mensual: null };
-    expect(describirPago({ ...base, esquema: "pct_subtotal", pct: 12.6 })).toBe("12.6% del subtotal de la factura");
+    const base = { base_flete: "cargado" as const, pct: null, tarifa_km_cargado: null, tarifa_km_vacio: null, tarifa_tonelada: null, monto_fijo: null, sueldo_base_mensual: null };
+    expect(describirPago({ ...base, esquema: "pct_subtotal", pct: 12.6 })).toBe("12.6% del subtotal (flete + cargos adicionales)");
+    expect(describirPago({ ...base, esquema: "pct_flete", pct: 12.6 })).toBe("12.6% del flete con peso cargado");
     expect(describirPago({ ...base, esquema: "por_km", tarifa_km_cargado: 3, tarifa_km_vacio: 2 })).toBe("$3/km cargado, $2/km vacío");
   });
 });

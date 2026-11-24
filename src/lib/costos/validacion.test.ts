@@ -12,6 +12,12 @@ describe("validarCosto", () => {
     const r = validarCosto({ fecha: "2026-10-05", categoria_id: "c1", monto: "1500" }, E);
     expect(r.ok && r.datos).toMatchObject({ mes: "2026-10-01", meses: 1, unidad_id: null, remolque_id: null, dolly_id: null });
   });
+  it("llantas con factura: total del comprobante, IVA aparte", () => {
+    const r = validarCosto({ fecha: "2026-10-05", categoria_id: "c1", monto: "27,840", equipo: "u:t1", tiene_factura: "on", tasa_iva: "16" }, E);
+    expect(r.ok && r.datos).toMatchObject({ monto: 27_840, tiene_factura: true, tasa_iva: 16, iva: 3_840, unidad_id: "t1" });
+    const sin = validarCosto({ fecha: "2026-10-05", categoria_id: "c1", monto: "1500" }, E);
+    expect(sin.ok && sin.datos).toMatchObject({ tiene_factura: false, iva: 0 });
+  });
   it("errores marcados por campo", () => {
     const r = validarCosto({ fecha: "x", mes: "2026-13", meses: "0", monto: "-5", equipo: "z:1", comprobante_path: "otra/x.pdf" }, E);
     expect(!r.ok && Object.keys(r.errores).sort()).toEqual(["categoria_id", "comprobante_path", "equipo", "fecha", "mes", "meses", "monto"]);

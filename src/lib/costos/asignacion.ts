@@ -16,7 +16,10 @@ export interface Costo {
   fecha: string; // aaaa-mm-dd
   mes: string; // aaaa-mm-01
   meses: number;
+  /** Costo para rentabilidad: total − IVA acreditable. */
   monto: number;
+  /** Lo pagado con IVA (para la vista "mostrar con IVA"); si falta, igual que monto. */
+  total?: number;
   categoriaId: string;
   unidadId: string | null;
   remolqueId: string | null;

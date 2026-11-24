@@ -13,7 +13,7 @@ export function ListaViajes({ viajes, veTarifas, nombreArchivo }: { viajes: Viaj
     toneladas: suma((v) => v.toneladas_cargadas),
     litros: suma((v) => v.resumen.litros),
     diesel: suma((v) => v.resumen.costoDiesel),
-    gastos: suma((v) => v.resumen.gastosFacturables + v.resumen.gastosPropios),
+    gastos: suma((v) => v.resumen.gastosCosto),
     ingreso: suma((v) => v.resumen.ingreso),
     utilidad: suma((v) => v.resumen.utilidad),
   };

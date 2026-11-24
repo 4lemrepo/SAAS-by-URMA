@@ -32,8 +32,8 @@ export async function cargarEntradaKpis(empresaId: string, desdeMes: string, has
     db.from("operadores").select("id, nombre").eq("empresa_id", empresaId),
     db.from("clientes").select("id, nombre").eq("empresa_id", empresaId),
     // Un costo de hasta 60 meses atrás puede seguir aplicando.
-    paginar<{ fecha: string; mes: string; meses: number; monto: number; categoria_id: string; unidad_id: string | null; remolque_id: string | null; dolly_id: string | null; cancelado: boolean }>((d, h) =>
-      db.from("costos").select("fecha, mes, meses, monto, categoria_id, unidad_id, remolque_id, dolly_id, cancelado").eq("empresa_id", empresaId).gte("mes", `${sumarMeses(`${inicio}-01`, -59)}-01`).lte("mes", `${hastaMes}-01`).order("id").range(d, h),
+    paginar<{ fecha: string; mes: string; meses: number; monto: number; iva: number; categoria_id: string; unidad_id: string | null; remolque_id: string | null; dolly_id: string | null; cancelado: boolean }>((d, h) =>
+      db.from("costos").select("fecha, mes, meses, monto, iva, categoria_id, unidad_id, remolque_id, dolly_id, cancelado").eq("empresa_id", empresaId).gte("mes", `${sumarMeses(`${inicio}-01`, -59)}-01`).lte("mes", `${hastaMes}-01`).order("id").range(d, h),
     ).then((data) => ({ data, error: null })),
     db.from("categorias_costo").select("id, nombre, incluir_en_rentabilidad").eq("empresa_id", empresaId),
     paginar<{ unidad_id: string; remolque1_id: string; dolly_id: string | null; remolque2_id: string | null; desde: string; hasta: string | null }>((d, h) =>
@@ -64,7 +64,9 @@ export async function cargarEntradaKpis(empresaId: string, desdeMes: string, has
         fecha: c.fecha,
         mes: c.mes,
         meses: c.meses,
-        monto: Number(c.monto),
+        // Costo real (sin IVA acreditable) y lo pagado, para "mostrar con IVA".
+        monto: Math.round((Number(c.monto) - Number(c.iva ?? 0)) * 100) / 100,
+        total: Number(c.monto),
         categoriaId: c.categoria_id,
         unidadId: c.unidad_id,
         remolqueId: c.remolque_id,
@@ -140,9 +142,15 @@ function aViajeKpi(v: ViajeCompleto, unidades: Map<string, Rend>, rutas: Map<str
     litros: r.litros,
     litrosTeoricos: rend ? litrosTeoricos({ cargado: r.kmCargado, vacio: r.kmVacio }, rend) : null,
     gastosPorCategoria: r.gastosPorCategoria,
-    gastosViaje: Math.round((r.gastosFacturables + r.gastosPropios) * 100) / 100,
+    gastosViaje: r.gastosCosto,
     pagoOperador: r.pagoOperador,
     costoVariable: r.costoVariable,
+    conIva: {
+      costoDiesel: r.dieselTotal,
+      gastosPorCategoria: r.gastosPorCategoriaConIva,
+      gastosViaje: r.gastosTotal,
+      costoVariable: r.costoVariableConIva,
+    },
     mermaToneladas: r.mermaToneladas,
     mermaPesos: r.mermaPesos,
     desvios: v.tramos

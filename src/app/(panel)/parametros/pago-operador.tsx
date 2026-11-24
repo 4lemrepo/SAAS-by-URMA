@@ -19,7 +19,7 @@ export async function SeccionPagoOperador({ operadorId, empresaId }: { operadorI
         operadorId={operadorId}
         usaElDeLaEmpresa={!fila || fila.activo === false}
         iniciales={Object.fromEntries(
-          ["esquema", "pct", "tarifa_km_cargado", "tarifa_km_vacio", "tarifa_tonelada", "monto_fijo", "sueldo_base_mensual"].map((k) => [
+          ["esquema", "base_flete", "pct", "tarifa_km_cargado", "tarifa_km_vacio", "tarifa_tonelada", "monto_fijo", "sueldo_base_mensual"].map((k) => [
             k,
             valorDeFormulario((fila?.[k] as string | number | null) ?? null),
           ]),

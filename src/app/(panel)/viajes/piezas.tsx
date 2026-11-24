@@ -2,22 +2,41 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Aviso, BotonEnviar, Campo, Selector } from "@/components/campos";
-import { CAMPOS_ESQUEMA, ESQUEMAS_PAGO, ETIQUETA_COLUMNA_PAGO } from "@/lib/viajes/pago";
+import { CamposFactura, EditarFactura, TextoFactura, useFactura } from "@/components/factura";
+import { parsearNumero } from "@/lib/catalogos/validacion";
+import { BASES_FLETE, CAMPOS_ESQUEMA, ESQUEMAS_PAGO, ETIQUETA_COLUMNA_PAGO } from "@/lib/viajes/pago";
 import type { EsquemaPago } from "@/lib/viajes/calculos";
 import { ahoraLocal, formatearFecha, formatearFechaHora, hoy } from "@/lib/viajes/fechas";
 import { FORMAS_PAGO } from "@/lib/viajes/movimientos";
 import { numero, pesos } from "@/lib/formato";
 import { crearClienteNavegador } from "@/lib/supabase/client";
-import type { Carga, Gasto } from "@/lib/viajes/datos";
+import type { Carga, CargoAdicional, Gasto } from "@/lib/viajes/datos";
 import {
+  cambiarFacturaCarga,
+  cambiarFacturaGasto,
+  cancelarCargoAdicional,
   cancelarGasto,
   cerrarViaje,
   guardarCarga,
+  guardarCargoAdicional,
   guardarFinanzas,
   guardarGasto,
   reabrirViaje,
   revisarCarga,
 } from "./acciones";
+
+/** Número de un campo del formulario mientras se escribe (null si vacío o inválido). */
+const leer = (v: string) => {
+  const n = parsearNumero(v);
+  return n === null || Number.isNaN(n) ? null : n;
+};
+
+export interface OpcionConFactura {
+  valor: string;
+  etiqueta: string;
+  /** Valor por defecto de "¿Tiene factura?" (categoría o fuente). */
+  tieneFactura: boolean;
+}
 
 const claseBoton =
   "rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800";
@@ -93,15 +112,18 @@ export function SeccionCargas({
   cargas,
   fuentes,
   revisables,
+  editables,
   fotos,
 }: {
   viajeId: string;
   empresaId: string;
   abierto: boolean;
   cargas: Carga[];
-  fuentes: { valor: string; etiqueta: string }[];
+  fuentes: OpcionConFactura[];
   /** Cargas que este usuario puede validar o rechazar. */
   revisables: string[];
+  /** Cargas a las que este usuario puede cambiarles la factura. */
+  editables: string[];
   fotos: Record<string, string>;
 }) {
   const [pendiente, iniciar] = useTransition();
@@ -128,8 +150,8 @@ export function SeccionCargas({
                 </p>
                 <p className="text-zinc-500">
                   {formatearFechaHora(c.fecha)}
-                  {c.importe !== null && ` · ${pesos(c.importe)}`}
-                  {c.precio_litro !== null && ` · ${pesos(c.precio_litro)}/L`}
+                  {c.precio_litro !== null &&
+                    ` · ${Number(c.precio_litro).toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2, maximumFractionDigits: 4 })}/L`}
                   {c.odometro !== null && ` · odómetro ${numero(c.odometro)}`}
                   {c.folio_ticket && ` · ticket ${c.folio_ticket}`}
                   {fotos[c.id] && (
@@ -141,6 +163,16 @@ export function SeccionCargas({
                     </>
                   )}
                 </p>
+                <p>
+                  {c.importe !== null ? (
+                    <TextoFactura total={Number(c.importe)} iva={c.iva} costo={c.costo} tieneFactura={c.tiene_factura} tasa={c.tasa_iva} />
+                  ) : (
+                    <span className="text-zinc-500">Sin importe: se estima con el precio del diésel de Parámetros{c.tiene_factura ? " (con factura)" : ""}</span>
+                  )}
+                </p>
+                {abierto && editables.includes(c.id) && (
+                  <EditarFactura tieneFactura={c.tiene_factura} tasa={c.tasa_iva} guardar={(t, x) => cambiarFacturaCarga(c.id, t, x)} />
+                )}
               </div>
               {revisables.includes(c.id) && (
                 <div className="flex gap-2">
@@ -166,16 +198,7 @@ export function SeccionCargas({
         (abiertoForm ? (
           <form action={accion} key={estado.enviadoEn ?? 0} className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
             <Aviso texto={estado.mensaje} tipo={estado.exito ? "exito" : "error"} />
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Campo etiqueta="Fecha y hora" name="fecha" type="datetime-local" defaultValue={estado.valores?.fecha ?? ahoraLocal()} required error={estado.errores?.fecha} />
-              <Selector etiqueta="Dónde" name="fuente_id" opciones={fuentes} vacio="Elige…" defaultValue={estado.valores?.fuente_id ?? ""} required error={estado.errores?.fuente_id} />
-              <Campo etiqueta="Litros" name="litros" inputMode="decimal" defaultValue={estado.valores?.litros ?? ""} required error={estado.errores?.litros} />
-              <Campo etiqueta="Precio por litro" name="precio_litro" inputMode="decimal" defaultValue={estado.valores?.precio_litro ?? ""} error={estado.errores?.precio_litro} />
-              <Campo etiqueta="Importe del ticket" name="importe" inputMode="decimal" defaultValue={estado.valores?.importe ?? ""} ayuda="Si lo dejas vacío: litros × precio" error={estado.errores?.importe} />
-              <Campo etiqueta="Odómetro" name="odometro" inputMode="decimal" defaultValue={estado.valores?.odometro ?? ""} error={estado.errores?.odometro} />
-              <Campo etiqueta="Folio del ticket" name="folio_ticket" defaultValue={estado.valores?.folio_ticket ?? ""} error={estado.errores?.folio_ticket} />
-              <SubirArchivo bucket="tickets" empresaId={empresaId} nombre="foto_ticket_path" etiqueta="Foto del ticket o del medidor" acepta="image/*" error={estado.errores?.foto_ticket_path} />
-            </div>
+            <FormularioCarga empresaId={empresaId} fuentes={fuentes} valores={estado.valores ?? {}} errores={estado.errores ?? {}} />
             <BotonEnviar pendiente="Guardando…">Agregar carga</BotonEnviar>
           </form>
         ) : (
@@ -200,7 +223,7 @@ export function SeccionGastos({
   empresaId: string;
   abierto: boolean;
   gastos: Gasto[];
-  categorias: { valor: string; etiqueta: string }[];
+  categorias: OpcionConFactura[];
   esAdmin: boolean;
   comprobantes: Record<string, string>;
 }) {
@@ -224,9 +247,16 @@ export function SeccionGastos({
             >
               <div>
                 <p className="font-medium">
-                  {g.categoria} · {pesos(Number(g.monto))}
-                  {g.facturable && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-300">se factura al cliente</span>}
+                  {g.categoria} · {pesos(g.monto)}
+                  {g.facturable_anterior && (
+                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      antes «se factura al cliente»: revisar
+                    </span>
+                  )}
                   {g.cancelado && <span className="ml-2 text-xs">(cancelado)</span>}
+                </p>
+                <p>
+                  <TextoFactura total={g.monto} iva={g.iva} costo={g.costo} tieneFactura={g.tiene_factura} tasa={g.tasa_iva} />
                 </p>
                 <p className="text-zinc-500">
                   {g.folio} · {formatearFecha(g.fecha)} · {formaPago(g.forma_pago)}
@@ -243,14 +273,19 @@ export function SeccionGastos({
                 </p>
               </div>
               {abierto && (
-                <button
-                  type="button"
-                  disabled={pendiente}
-                  onClick={() => iniciar(async () => setError(await cancelarGasto(g.id, !g.cancelado)))}
-                  className="text-sm text-zinc-600 underline dark:text-zinc-400"
-                >
-                  {g.cancelado ? "Reactivar" : "Cancelar"}
-                </button>
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    type="button"
+                    disabled={pendiente}
+                    onClick={() => iniciar(async () => setError(await cancelarGasto(g.id, !g.cancelado)))}
+                    className="text-sm text-zinc-600 underline dark:text-zinc-400"
+                  >
+                    {g.cancelado ? "Reactivar" : "Cancelar"}
+                  </button>
+                  {!g.cancelado && (
+                    <EditarFactura tieneFactura={g.tiene_factura} tasa={g.tasa_iva} guardar={(t, x) => cambiarFacturaGasto(g.id, t, x)} />
+                  )}
+                </div>
               )}
             </li>
           ))}
@@ -261,20 +296,7 @@ export function SeccionGastos({
         (abiertoForm ? (
           <form action={accion} key={estado.enviadoEn ?? 0} className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
             <Aviso texto={estado.mensaje} tipo={estado.exito ? "exito" : "error"} />
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Campo etiqueta="Fecha" name="fecha" type="date" defaultValue={estado.valores?.fecha ?? hoy()} required error={estado.errores?.fecha} />
-              <Selector etiqueta="Categoría" name="categoria_id" opciones={categorias} vacio="Elige…" defaultValue={estado.valores?.categoria_id ?? ""} required error={estado.errores?.categoria_id} />
-              <Campo etiqueta="Monto" name="monto" inputMode="decimal" defaultValue={estado.valores?.monto ?? ""} required error={estado.errores?.monto} />
-              <Selector etiqueta="Forma de pago" name="forma_pago" opciones={FORMAS_PAGO} defaultValue={estado.valores?.forma_pago ?? "efectivo"} error={estado.errores?.forma_pago} />
-              <Campo etiqueta="Proveedor" name="proveedor" defaultValue={estado.valores?.proveedor ?? ""} error={estado.errores?.proveedor} />
-              <Campo etiqueta="No. de comprobante o factura" name="numero_comprobante" defaultValue={estado.valores?.numero_comprobante ?? ""} error={estado.errores?.numero_comprobante} />
-              <SubirArchivo bucket="comprobantes" empresaId={empresaId} nombre="comprobante_path" etiqueta="Comprobante (foto o PDF)" acepta="image/*,application/pdf" error={estado.errores?.comprobante_path} />
-              {esAdmin && <Campo etiqueta="Folio" name="folio" placeholder="Automático" defaultValue={estado.valores?.folio ?? ""} error={estado.errores?.folio} />}
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="facturable" defaultChecked={estado.valores?.facturable === "on"} />
-              Se factura al cliente (suma al ingreso del viaje)
-            </label>
+            <FormularioGasto empresaId={empresaId} categorias={categorias} esAdmin={esAdmin} valores={estado.valores ?? {}} errores={estado.errores ?? {}} />
             <BotonEnviar pendiente="Guardando…">Agregar gasto</BotonEnviar>
           </form>
         ) : (
@@ -305,7 +327,7 @@ export function FormularioFinanzas({ viajeId, iniciales }: { viajeId: string; in
           ]}
           error={e.tipo_tarifa}
         />
-        <Campo etiqueta="$ (por tonelada o monto fijo)" name="tarifa" inputMode="decimal" defaultValue={v.tarifa ?? ""} required error={e.tarifa} />
+        <Campo etiqueta="$ (por tonelada o monto fijo, sin IVA)" name="tarifa" inputMode="decimal" defaultValue={v.tarifa ?? ""} required error={e.tarifa} />
         <Selector
           etiqueta="Se factura por peso"
           name="factura_por"
@@ -325,6 +347,9 @@ export function FormularioFinanzas({ viajeId, iniciales }: { viajeId: string; in
           opciones={ESQUEMAS_PAGO}
           error={e.pago_esquema}
         />
+        {esquema === "pct_flete" && (
+          <Selector etiqueta="Base del % del flete" name="pago_base_flete" defaultValue={v.pago_base_flete || "cargado"} opciones={BASES_FLETE} />
+        )}
         {CAMPOS_ESQUEMA[esquema]
           .filter((c) => c !== "sueldo_base_mensual")
           .map((c) => (
@@ -399,5 +424,174 @@ export function Cierre({
       <Campo etiqueta="Motivo para reabrir" name="motivo" required minLength={5} error={estado.errores?.motivo} />
       <BotonEnviar pendiente="Reabriendo…">Reabrir viaje</BotonEnviar>
     </form>
+  );
+}
+
+/** Campos de una carga: litros y precio como vienen en el ticket; importe = litros × precio si no se escribe. */
+function FormularioCarga({
+  empresaId,
+  fuentes,
+  valores,
+  errores,
+}: {
+  empresaId: string;
+  fuentes: OpcionConFactura[];
+  valores: Record<string, string>;
+  errores: Record<string, string | undefined>;
+}) {
+  const [fuente, setFuente] = useState(valores.fuente_id ?? "");
+  const [litros, setLitros] = useState(valores.litros ?? "");
+  const [precio, setPrecio] = useState(valores.precio_litro ?? "");
+  const [importe, setImporte] = useState(valores.importe ?? "");
+  const factura = useFactura({ tieneFactura: valores.tiene_factura === "on" });
+  const calculado = leer(litros) !== null && leer(precio) !== null ? Math.round(leer(litros)! * leer(precio)! * 100) / 100 : null;
+  const total = leer(importe) ?? calculado;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <Campo etiqueta="Fecha y hora" name="fecha" type="datetime-local" defaultValue={valores.fecha ?? ahoraLocal()} required error={errores.fecha} />
+      <Selector
+        etiqueta="Dónde"
+        name="fuente_id"
+        opciones={fuentes}
+        vacio="Elige…"
+        value={fuente}
+        onChange={(e) => {
+          setFuente(e.target.value);
+          // Cada fuente trae su valor por defecto de "¿Tiene factura?".
+          factura.setTieneFactura(fuentes.find((f) => f.valor === e.target.value)?.tieneFactura ?? false);
+        }}
+        required
+        error={errores.fuente_id}
+      />
+      <Campo etiqueta="Litros" name="litros" inputMode="decimal" value={litros} onChange={(e) => setLitros(e.target.value)} required error={errores.litros} />
+      <Campo
+        etiqueta="Precio por litro (como viene en el ticket)"
+        name="precio_litro"
+        inputMode="decimal"
+        value={precio}
+        onChange={(e) => setPrecio(e.target.value)}
+        ayuda="Con IVA si el ticket lo trae"
+        error={errores.precio_litro}
+      />
+      <Campo
+        etiqueta="Importe del ticket"
+        name="importe"
+        inputMode="decimal"
+        value={importe}
+        onChange={(e) => setImporte(e.target.value)}
+        placeholder={calculado === null ? "" : String(calculado)}
+        ayuda={calculado === null ? "Si lo dejas vacío: litros × precio" : `Vacío: litros × precio = ${pesos(calculado)}`}
+        error={errores.importe}
+      />
+      <Campo etiqueta="Odómetro" name="odometro" inputMode="decimal" defaultValue={valores.odometro ?? ""} error={errores.odometro} />
+      <Campo etiqueta="Folio del ticket" name="folio_ticket" defaultValue={valores.folio_ticket ?? ""} error={errores.folio_ticket} />
+      <SubirArchivo bucket="tickets" empresaId={empresaId} nombre="foto_ticket_path" etiqueta="Foto del ticket o del medidor" acepta="image/*" error={errores.foto_ticket_path} />
+      <CamposFactura total={total} factura={factura} />
+    </div>
+  );
+}
+
+/** Campos de un gasto: el total que dice el ticket y si tiene factura (por defecto, el de su categoría). */
+function FormularioGasto({
+  empresaId,
+  categorias,
+  esAdmin,
+  valores,
+  errores,
+}: {
+  empresaId: string;
+  categorias: OpcionConFactura[];
+  esAdmin: boolean;
+  valores: Record<string, string>;
+  errores: Record<string, string | undefined>;
+}) {
+  const [categoria, setCategoria] = useState(valores.categoria_id ?? "");
+  const [monto, setMonto] = useState(valores.monto ?? "");
+  const factura = useFactura({ tieneFactura: valores.tiene_factura === "on" });
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <Campo etiqueta="Fecha" name="fecha" type="date" defaultValue={valores.fecha ?? hoy()} required error={errores.fecha} />
+      <Selector
+        etiqueta="Categoría"
+        name="categoria_id"
+        opciones={categorias}
+        vacio="Elige…"
+        value={categoria}
+        onChange={(e) => {
+          setCategoria(e.target.value);
+          factura.setTieneFactura(categorias.find((c) => c.valor === e.target.value)?.tieneFactura ?? false);
+        }}
+        required
+        error={errores.categoria_id}
+      />
+      <Campo
+        etiqueta="Total pagado (como dice el ticket)"
+        name="monto"
+        inputMode="decimal"
+        value={monto}
+        onChange={(e) => setMonto(e.target.value)}
+        ayuda="Con IVA si lo trae"
+        required
+        error={errores.monto}
+      />
+      <Selector etiqueta="Forma de pago" name="forma_pago" opciones={FORMAS_PAGO} defaultValue={valores.forma_pago ?? "efectivo"} error={errores.forma_pago} />
+      <Campo etiqueta="Proveedor" name="proveedor" defaultValue={valores.proveedor ?? ""} error={errores.proveedor} />
+      <Campo etiqueta="No. de comprobante o factura" name="numero_comprobante" defaultValue={valores.numero_comprobante ?? ""} error={errores.numero_comprobante} />
+      <SubirArchivo bucket="comprobantes" empresaId={empresaId} nombre="comprobante_path" etiqueta="Comprobante (foto o PDF)" acepta="image/*,application/pdf" error={errores.comprobante_path} />
+      {esAdmin && <Campo etiqueta="Folio" name="folio" placeholder="Automático" defaultValue={valores.folio ?? ""} error={errores.folio} />}
+      <CamposFactura total={leer(monto)} factura={factura} />
+    </div>
+  );
+}
+
+/** Cargos adicionales al cliente (maniobras, estadías…): suman al ingreso, sin IVA y sin comisión del "% del flete". */
+export function SeccionCargosAdicionales({ viajeId, abierto, cargos }: { viajeId: string; abierto: boolean; cargos: CargoAdicional[] }) {
+  const [pendiente, iniciar] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [estado, accion] = useActionState(guardarCargoAdicional.bind(null, viajeId), {});
+  const [abiertoForm, setAbiertoForm] = useState(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="font-medium">Cargos adicionales al cliente</h3>
+      {cargos.length === 0 ? (
+        <p className="text-sm text-zinc-500">Sin cargos adicionales.</p>
+      ) : (
+        <ul className="flex flex-col gap-1 text-sm">
+          {cargos.map((c) => (
+            <li key={c.id} className={`flex flex-wrap items-center justify-between gap-2 ${c.cancelado ? "opacity-50" : ""}`}>
+              <span>
+                {c.concepto} · {pesos(c.monto)} sin IVA{c.cancelado && " (cancelado)"}
+              </span>
+              {abierto && (
+                <button
+                  type="button"
+                  disabled={pendiente}
+                  onClick={() => iniciar(async () => setError(await cancelarCargoAdicional(c.id, !c.cancelado)))}
+                  className="text-sm text-zinc-600 underline dark:text-zinc-400"
+                >
+                  {c.cancelado ? "Reactivar" : "Cancelar"}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Mensaje texto={error} />
+      {abierto &&
+        (abiertoForm ? (
+          <form action={accion} key={estado.enviadoEn ?? 0} className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <Aviso texto={estado.mensaje} tipo={estado.exito ? "exito" : "error"} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Campo etiqueta="Concepto" name="concepto" placeholder="Maniobra, estadía…" defaultValue={estado.valores?.concepto ?? ""} required error={estado.errores?.concepto} />
+              <Campo etiqueta="Monto (subtotal sin IVA)" name="monto" inputMode="decimal" defaultValue={estado.valores?.monto ?? ""} required error={estado.errores?.monto} />
+            </div>
+            <BotonEnviar pendiente="Guardando…">Agregar cargo</BotonEnviar>
+          </form>
+        ) : (
+          <button type="button" onClick={() => setAbiertoForm(true)} className={`self-start ${claseBoton}`}>
+            + Agregar cargo adicional
+          </button>
+        ))}
+    </div>
   );
 }

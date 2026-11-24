@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { puede, puedeRevisarCarga } from "@/lib/auth/permisos";
 import { sesionDeAccion } from "@/lib/auth/sesion";
 import { claveComparacion } from "@/lib/catalogos/validacion";
+import { desglosarIva, tasaIva, type TasaIva } from "@/lib/costos/iva";
 import { ultimoPuntoDeUnidad } from "@/lib/viajes/datos";
 import { localAIso } from "@/lib/viajes/fechas";
 import { validarViaje } from "@/lib/viajes/formulario";
-import { validarCarga, validarFinanzas, validarGasto } from "@/lib/viajes/movimientos";
+import { validarCarga, validarCargoAdicional, validarFinanzas, validarGasto } from "@/lib/viajes/movimientos";
 
 export interface EstadoFormulario {
   mensaje?: string;
@@ -202,6 +203,50 @@ export async function cancelarGasto(id: string, cancelado: boolean): Promise<str
   return null;
 }
 
+/** "¿Tiene factura?" de un gasto ya capturado: recalcula el IVA de su total. */
+export async function cambiarFacturaGasto(id: string, tieneFactura: boolean, tasa: TasaIva): Promise<string | null> {
+  const sesion = await sesionQueCaptura();
+  if (!sesion) return "Tu rol no captura gastos";
+  const { data: gasto } = await sesion.supabase.from("gastos_viaje").select("monto").eq("id", id).maybeSingle();
+  if (!gasto) return "No se encontró el gasto";
+  const t = tasaIva(tasa);
+  const { iva } = desglosarIva(Number(gasto.monto), tieneFactura, t);
+  const { error } = await sesion.supabase.from("gastos_viaje").update({ tiene_factura: tieneFactura, tasa_iva: t, iva }).eq("id", id);
+  if (error) return mensajeDeError(error, "No se pudo cambiar el gasto");
+  refresh();
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Cargos adicionales al cliente (solo quien ve tarifas)
+// ---------------------------------------------------------------------------
+
+export async function guardarCargoAdicional(viajeId: string, _: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
+  const v = valores(form);
+  const sesion = await sesionDeAccion();
+  if (!sesion) redirect("/login");
+  if (!sesion.empresa.veTarifas) return { mensaje: "No tienes permiso para ver tarifas e ingresos" };
+  const r = validarCargoAdicional(v);
+  if (!r.ok) return { errores: r.errores, valores: v };
+  const { error } = await sesion.supabase
+    .from("cargos_adicionales")
+    .insert({ ...r.datos, viaje_id: viajeId, empresa_id: sesion.empresa.empresaId });
+  if (error) return { mensaje: mensajeDeError(error, "No se pudo guardar el cargo"), valores: v };
+  refresh();
+  return { exito: true, mensaje: "Cargo agregado.", enviadoEn: Date.now() };
+}
+
+/** Nada se borra: un cargo equivocado se cancela y queda en la bitácora. */
+export async function cancelarCargoAdicional(id: string, cancelado: boolean): Promise<string | null> {
+  const sesion = await sesionDeAccion();
+  if (!sesion) redirect("/login");
+  if (!sesion.empresa.veTarifas) return "No tienes permiso para ver tarifas e ingresos";
+  const { error } = await sesion.supabase.from("cargos_adicionales").update({ cancelado }).eq("id", id);
+  if (error) return mensajeDeError(error, "No se pudo cambiar el cargo");
+  refresh();
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Cargas de diésel
 // ---------------------------------------------------------------------------
@@ -224,6 +269,25 @@ export async function guardarCarga(viajeId: string, _: EstadoFormulario, form: F
   if (error) return { mensaje: mensajeDeError(error, "No se pudo guardar la carga"), valores: v };
   refresh();
   return { exito: true, mensaje: "Carga agregada. Queda pendiente hasta que se valide.", enviadoEn: Date.now() };
+}
+
+/** "¿Tiene factura?" de una carga ya capturada: recalcula el IVA de su importe. */
+export async function cambiarFacturaCarga(id: string, tieneFactura: boolean, tasa: TasaIva): Promise<string | null> {
+  const sesion = await sesionQueCaptura();
+  if (!sesion) return "Tu rol no captura cargas";
+  const { data: carga } = await sesion.supabase.from("cargas_diesel").select("importe").eq("id", id).maybeSingle();
+  if (!carga) return "No se encontró la carga";
+  const t = tasaIva(tasa);
+  const iva = carga.importe === null ? 0 : desglosarIva(Number(carga.importe), tieneFactura, t).iva;
+  const { data, error } = await sesion.supabase
+    .from("cargas_diesel")
+    .update({ tiene_factura: tieneFactura, tasa_iva: t, iva })
+    .eq("id", id)
+    .select("id");
+  if (error) return mensajeDeError(error, "No se pudo cambiar la carga");
+  if (!data?.length) return "No puedes cambiar esta carga";
+  refresh();
+  return null;
 }
 
 /** Validar o rechazar. La base impide que administración revise lo que capturó. */

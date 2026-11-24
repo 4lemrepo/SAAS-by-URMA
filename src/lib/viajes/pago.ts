@@ -3,7 +3,7 @@
  * quiere, por operador. Cada viaje guarda el esquema y los valores que usó.
  */
 import { parsearNumero } from "@/lib/catalogos/validacion";
-import { NOMBRE_ESQUEMA_PAGO, type EsquemaPago } from "./calculos";
+import { NOMBRE_ESQUEMA_PAGO, type BaseFlete, type EsquemaPago } from "./calculos";
 
 export const ESQUEMAS_PAGO = (Object.keys(NOMBRE_ESQUEMA_PAGO) as EsquemaPago[]).map((valor) => ({
   valor,
@@ -31,7 +31,13 @@ export const ETIQUETA_COLUMNA_PAGO: Record<ColumnaPago, string> = {
   sueldo_base_mensual: "Sueldo base mensual ($)",
 };
 
-export type ConfigPagoFila = { esquema: EsquemaPago } & Record<ColumnaPago, number | null>;
+/** Base del "% del flete". */
+export const BASES_FLETE: readonly { valor: BaseFlete; etiqueta: string }[] = [
+  { valor: "cargado", etiqueta: "Peso cargado (tarifa × toneladas cargadas)" },
+  { valor: "facturado", etiqueta: "Peso facturado (el flete de la factura)" },
+];
+
+export type ConfigPagoFila = { esquema: EsquemaPago; base_flete: BaseFlete } & Record<ColumnaPago, number | null>;
 
 export function validarConfigPago(
   valores: Record<string, unknown>,
@@ -40,6 +46,8 @@ export function validarConfigPago(
   if (!(esquema in CAMPOS_ESQUEMA)) return { ok: false, errores: { esquema: "Elige un esquema" } };
   const datos = {
     esquema,
+    // Solo cuenta en "% del flete"; por defecto peso cargado.
+    base_flete: esquema === "pct_flete" && valores.base_flete === "facturado" ? "facturado" : "cargado",
     pct: null,
     tarifa_km_cargado: null,
     tarifa_km_vacio: null,
@@ -78,9 +86,9 @@ export function describirPago(c: ConfigPagoFila): string {
   const $ = (n: number | null) => (n === null ? "?" : `$${n.toLocaleString("es-MX")}`);
   switch (c.esquema) {
     case "pct_subtotal":
-      return `${c.pct ?? "?"}% del subtotal de la factura`;
+      return `${c.pct ?? "?"}% del subtotal (flete + cargos adicionales)`;
     case "pct_flete":
-      return `${c.pct ?? "?"}% del flete`;
+      return `${c.pct ?? "?"}% del flete con peso ${c.base_flete === "facturado" ? "facturado" : "cargado"}`;
     case "por_km":
       return `${$(c.tarifa_km_cargado)}/km cargado, ${$(c.tarifa_km_vacio)}/km vacío`;
     case "por_tonelada":

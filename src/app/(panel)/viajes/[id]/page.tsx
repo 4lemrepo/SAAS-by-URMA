@@ -13,7 +13,7 @@ import { MOTIVOS_DESVIO } from "@/lib/viajes/formulario";
 import { revisarKm } from "@/lib/viajes/km";
 import { configParaOperador, describirPago, type ConfigPagoFila } from "@/lib/viajes/pago";
 import { FormularioViaje } from "../formulario-viaje";
-import { Cierre, FormularioFinanzas, SeccionCargas, SeccionGastos } from "../piezas";
+import { Cierre, FormularioFinanzas, SeccionCargas, SeccionCargosAdicionales, SeccionGastos } from "../piezas";
 
 export const metadata: Metadata = { title: "Viaje · Control Diésel" };
 
@@ -38,8 +38,8 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
 
   const [formulario, fuentes, categorias, fotos, comprobantes, tolerancia, pagoConfigs] = await Promise.all([
     abierto ? datosParaFormulario(db, empresa.empresaId, esAdmin) : null,
-    db.from("fuentes_diesel").select("id, nombre").eq("empresa_id", empresa.empresaId).eq("activa", true).order("nombre"),
-    db.from("categorias_gasto").select("id, nombre").eq("empresa_id", empresa.empresaId).eq("activo", true).order("nombre"),
+    db.from("fuentes_diesel").select("id, nombre, tiene_factura").eq("empresa_id", empresa.empresaId).eq("activa", true).order("nombre"),
+    db.from("categorias_gasto").select("id, nombre, tiene_factura").eq("empresa_id", empresa.empresaId).eq("activo", true).order("nombre"),
     urlsFirmadas(db, "tickets", viaje.cargas.map((c) => [c.id, c.foto_ticket_path])),
     urlsFirmadas(db, "comprobantes", viaje.gastos.map((g) => [g.id, g.comprobante_path])),
     db.rpc("tolerancia_km", { p_empresa: empresa.empresaId }),
@@ -83,23 +83,36 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">Ingreso y utilidad</h2>
           {viaje.finanzas ? (
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
-              <Dato titulo="Flete" valor={pesos(r.flete)} />
-              <Dato titulo="Gastos facturados" valor={pesos(r.gastosFacturables)} />
-              <Dato titulo="Ingreso (subtotal)" valor={pesos(r.ingreso)} fuerte />
-              <Dato titulo="Diésel" valor={pesos(r.costoDiesel)} />
-              <Dato titulo="Gastos del viaje" valor={pesos(r.gastosFacturables + r.gastosPropios)} />
-              <Dato titulo="Pago al operador" valor={pesos(r.pagoOperador)} />
-              <Dato titulo="Costo variable" valor={pesos(r.costoVariable)} />
-              <Dato titulo="Utilidad" valor={pesos(r.utilidad)} fuerte negativo={(r.utilidad ?? 0) < 0} />
-              <Dato titulo="Margen %" valor={porcentaje(r.margenPct)} />
-              <Dato titulo="Utilidad sobre costo %" valor={porcentaje(r.utilidadSobreCostoPct)} />
-              <Dato titulo="Merma" valor={r.mermaToneladas === null ? "—" : `${numero(r.mermaToneladas, 2)} t (${porcentaje(r.mermaPct)}) · ${pesos(r.mermaPesos)}`} />
-              <Dato titulo="Pago calculado con" valor={describirPago(finanzasComoConfig(viaje))} />
-            </dl>
+            <>
+              <table className="w-full max-w-2xl text-sm">
+                <tbody>
+                  {r.renglones.map((x, n) => (
+                    <tr key={n} className={`border-t border-zinc-100 dark:border-zinc-800 ${x.tipo === "total" ? "font-semibold" : ""}`}>
+                      <td className={`py-1 pr-3 ${x.tipo === "costo" ? "pl-4 text-zinc-600 dark:text-zinc-400" : ""}`}>
+                        {x.tipo === "costo" ? "− " : ""}
+                        {x.concepto}
+                      </td>
+                      <td className={`py-1 text-right ${(x.monto ?? 0) < 0 ? "text-red-600" : ""}`}>{pesos(x.monto)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-sm text-zinc-500">
+                Utilidad de contribución: no incluye costos fijos (mantenimiento, llantas, seguro, oficina…), que están en Costos y
+                en el tablero. Los costos van sin el IVA acreditable de lo que tiene factura ({pesos(r.ivaAcreditable)} en este
+                viaje).
+              </p>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+                <Dato titulo="Margen %" valor={porcentaje(r.margenPct)} />
+                <Dato titulo="Utilidad sobre costo %" valor={porcentaje(r.utilidadSobreCostoPct)} />
+                <Dato titulo="Merma" valor={r.mermaToneladas === null ? "—" : `${numero(r.mermaToneladas, 2)} t (${porcentaje(r.mermaPct)}) · ${pesos(r.mermaPesos)}`} />
+                <Dato titulo="Pago calculado con" valor={describirPago(finanzasComoConfig(viaje))} />
+              </dl>
+            </>
           ) : (
             <p className="text-sm text-amber-700 dark:text-amber-400">Este viaje todavía no tiene tarifa.</p>
           )}
+          <SeccionCargosAdicionales viajeId={viaje.id} abierto={abierto} cargos={viaje.cargosAdicionales} />
           {abierto && (
             <details open={!viaje.finanzas}>
               <summary className="cursor-pointer text-sm font-medium">{viaje.finanzas ? "Cambiar tarifa y pago" : "Capturar tarifa y pago"}</summary>
@@ -116,10 +129,12 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
         empresaId={empresa.empresaId}
         abierto={abierto}
         cargas={viaje.cargas}
-        fuentes={(fuentes.data ?? []).map((f) => ({ valor: f.id, etiqueta: f.nombre }))}
+        fuentes={(fuentes.data ?? []).map((f) => ({ valor: f.id, etiqueta: f.nombre, tieneFactura: f.tiene_factura }))}
         revisables={viaje.cargas
           .filter((c) => puedeRevisarCarga(empresa.rol, usuarioId, { capturadoPor: c.capturado_por, estado: c.estado }))
           .map((c) => c.id)}
+        // Administración corrige cualquier carga; captura, las suyas pendientes (RLS).
+        editables={viaje.cargas.filter((c) => esAdmin || (c.capturado_por === usuarioId && c.estado === "pendiente")).map((c) => c.id)}
         fotos={fotos}
       />
 
@@ -128,7 +143,7 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
         empresaId={empresa.empresaId}
         abierto={abierto}
         gastos={viaje.gastos}
-        categorias={(categorias.data ?? []).map((c) => ({ valor: c.id, etiqueta: c.nombre }))}
+        categorias={(categorias.data ?? []).map((c) => ({ valor: c.id, etiqueta: c.nombre, tieneFactura: c.tiene_factura }))}
         esAdmin={esAdmin}
         comprobantes={comprobantes}
       />
@@ -264,6 +279,7 @@ function finanzasComoConfig(v: ViajeCompleto): ConfigPagoFila {
   const f = v.finanzas!;
   return {
     esquema: f.pago_esquema,
+    base_flete: f.pago_base_flete,
     pct: f.pago_pct,
     tarifa_km_cargado: f.pago_tarifa_km_cargado,
     tarifa_km_vacio: f.pago_tarifa_km_vacio,
@@ -286,6 +302,7 @@ function inicialesFinanzas(
       tarifa: s(f.tarifa),
       factura_por: f.factura_por,
       pago_esquema: f.pago_esquema,
+      pago_base_flete: f.pago_base_flete,
       pago_pct: s(f.pago_pct),
       pago_tarifa_km_cargado: s(f.pago_tarifa_km_cargado),
       pago_tarifa_km_vacio: s(f.pago_tarifa_km_vacio),
@@ -298,7 +315,8 @@ function inicialesFinanzas(
   return {
     tipo_tarifa: "por_tonelada",
     factura_por: v.facturaPorCliente ?? "cargado",
-    pago_esquema: c?.esquema ?? "pct_subtotal",
+    pago_esquema: c?.esquema ?? "pct_flete",
+    pago_base_flete: c?.base_flete ?? "cargado",
     pago_pct: s(c?.pct),
     pago_tarifa_km_cargado: s(c?.tarifa_km_cargado),
     pago_tarifa_km_vacio: s(c?.tarifa_km_vacio),
@@ -316,6 +334,12 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   tipo_tarifa: "Tipo de tarifa",
   monto: "Monto",
   cancelado: "Cancelado",
+  tiene_factura: "Tiene factura",
+  tasa_iva: "Tasa de IVA",
+  iva: "IVA acreditable",
+  concepto: "Concepto",
+  pago_esquema: "Esquema de pago",
+  pago_base_flete: "Base del % del flete",
   odometro_inicial: "Odómetro inicial",
   odometro_final: "Odómetro final",
   litros: "Litros",
@@ -326,6 +350,7 @@ const NOMBRE_TABLA: Record<string, string> = {
   viajes_finanzas: "Tarifa y pago",
   gastos_viaje: "Gasto",
   cargas_diesel: "Carga de diésel",
+  cargos_adicionales: "Cargo adicional",
 };
 
 async function Bitacora({ viajeId, empresaId, esDueno }: { viajeId: string; empresaId: string; esDueno: boolean }) {

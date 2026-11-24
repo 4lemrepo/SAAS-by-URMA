@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Aviso, BotonEnviar, Campo, Selector } from "@/components/campos";
 import { GRUPOS_PARAMETROS } from "@/lib/empresa/parametros";
-import { CAMPOS_ESQUEMA, ESQUEMAS_PAGO, ETIQUETA_COLUMNA_PAGO } from "@/lib/viajes/pago";
+import { BASES_FLETE, CAMPOS_ESQUEMA, ESQUEMAS_PAGO, ETIQUETA_COLUMNA_PAGO } from "@/lib/viajes/pago";
 import type { EsquemaPago } from "@/lib/viajes/calculos";
 import { useState } from "react";
 import { guardarParametros, guardarPagoOperador } from "./acciones";
@@ -68,6 +68,9 @@ export function FormularioPago({
       {(propio || !operadorId) && (
         <div className="grid gap-4 sm:grid-cols-3">
           <Selector etiqueta="Esquema" name="esquema" value={esquema} onChange={(e) => setEsquema(e.target.value as EsquemaPago)} opciones={ESQUEMAS_PAGO} />
+          {esquema === "pct_flete" && (
+            <Selector etiqueta="Base del % del flete" name="base_flete" defaultValue={v.base_flete || "cargado"} opciones={BASES_FLETE} />
+          )}
           {CAMPOS_ESQUEMA[esquema].map((c) => (
             <Campo
               key={c}

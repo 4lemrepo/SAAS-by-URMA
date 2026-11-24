@@ -3,6 +3,7 @@
  * tarifa con el pago al operador. Puras; la base vuelve a validar.
  */
 import { normalizarTexto, parsearNumero } from "@/lib/catalogos/validacion";
+import { desglosarIva, tasaIva, type TasaIva } from "@/lib/costos/iva";
 import { validarConfigPago, type ConfigPagoFila } from "./pago";
 
 type Valores = Record<string, string | undefined>;
@@ -37,6 +38,15 @@ function numero(v: string | undefined, campo: string, errores: Record<string, st
   return null;
 }
 
+/** Como numero(), pero con más decimales (precio por litro como viene en el ticket). */
+function numeroDecimales(v: string | undefined, campo: string, errores: Record<string, string>, decimales: number, opciones: { min?: number; max?: number; minExclusivo?: boolean } = {}) {
+  const n = numero(v, campo, errores, opciones);
+  if (n === null) return null;
+  const crudo = parsearNumero(v)!;
+  const f = 10 ** decimales;
+  return Math.round(crudo * f) / f;
+}
+
 /** Ruta de un archivo subido a Storage: debe estar en la carpeta de la empresa. */
 function archivo(v: string | undefined, empresaId: string, campo: string, errores: Record<string, string>) {
   const t = texto(v);
@@ -45,15 +55,24 @@ function archivo(v: string | undefined, empresaId: string, campo: string, errore
   return t;
 }
 
+/** "¿Tiene factura?" y su tasa, como llegan de un formulario (casilla "on" y "16" / "8" / "0"). */
+export function leerFactura(v: Valores): { tiene_factura: boolean; tasa_iva: TasaIva } {
+  return { tiene_factura: v.tiene_factura === "on" || v.tiene_factura === "true", tasa_iva: tasaIva(v.tasa_iva) };
+}
+
 export interface GastoValidado {
   fecha: string;
   categoria_id: string;
+  /** Total pagado, como dice el ticket. */
   monto: number;
+  tiene_factura: boolean;
+  tasa_iva: TasaIva;
+  /** IVA acreditable (0 sin factura). */
+  iva: number;
   forma_pago: string;
   proveedor: string | null;
   numero_comprobante: string | null;
   comprobante_path: string | null;
-  facturable: boolean;
   notas: string | null;
 }
 
@@ -65,15 +84,17 @@ export function validarGasto(v: Valores, empresaId: string): Resultado<GastoVali
   const monto = numero(v.monto, "monto", errores, { requerido: true, minExclusivo: true, max: 10_000_000 });
   const forma = texto(v.forma_pago) || "efectivo";
   if (!FORMAS_PAGO.some((f) => f.valor === forma)) errores.forma_pago = "Forma de pago inválida";
+  const factura = leerFactura(v);
   const datos = {
     fecha,
     categoria_id: texto(v.categoria_id),
     monto: monto ?? 0,
+    ...factura,
+    iva: desglosarIva(monto ?? 0, factura.tiene_factura, factura.tasa_iva).iva,
     forma_pago: forma,
     proveedor: opcional(v.proveedor, 120, "proveedor", errores),
     numero_comprobante: opcional(v.numero_comprobante, 60, "numero_comprobante", errores),
     comprobante_path: archivo(v.comprobante_path, empresaId, "comprobante_path", errores),
-    facturable: v.facturable === "on" || v.facturable === "true",
     notas: opcional(v.notas, 500, "notas", errores),
   };
   return Object.keys(errores).length ? { ok: false, errores } : { ok: true, datos };
@@ -84,7 +105,12 @@ export interface CargaValidada {
   fuente_id: string;
   litros: number;
   precio_litro: number | null;
+  /** Total del ticket; si no se escribe, litros × precio. */
   importe: number | null;
+  tiene_factura: boolean;
+  tasa_iva: TasaIva;
+  /** IVA acreditable del importe (0 sin factura o sin importe). */
+  iva: number;
   odometro: number | null;
   folio_ticket: string | null;
   foto_ticket_path: string | null;
@@ -96,16 +122,20 @@ export function validarCarga(v: Valores, empresaId: string): Resultado<CargaVali
   if (!fecha || Number.isNaN(Date.parse(fecha))) errores.fecha = "Fecha inválida";
   if (!texto(v.fuente_id)) errores.fuente_id = "Elige dónde se cargó";
   const litros = numero(v.litros, "litros", errores, { requerido: true, minExclusivo: true, max: 3000 });
-  const precio = numero(v.precio_litro, "precio_litro", errores, { minExclusivo: true, max: 100 });
+  const precio = numeroDecimales(v.precio_litro, "precio_litro", errores, 4, { minExclusivo: true, max: 100 });
   const importe = numero(v.importe, "importe", errores, { minExclusivo: true, max: 1_000_000 });
   const odometro = numero(v.odometro, "odometro", errores, { max: 9_999_999 });
+  // Si hay litros y precio pero no importe, se calcula: importe = litros × precio.
+  const total = importe ?? (litros !== null && precio !== null ? Math.round(litros * precio * 100) / 100 : null);
+  const factura = leerFactura(v);
   const datos = {
     fecha: fecha ? new Date(fecha).toISOString() : "",
     fuente_id: texto(v.fuente_id),
     litros: litros ?? 0,
     precio_litro: precio,
-    // Si hay litros y precio pero no importe, se calcula.
-    importe: importe ?? (litros !== null && precio !== null ? Math.round(litros * precio * 100) / 100 : null),
+    importe: total,
+    ...factura,
+    iva: total === null ? 0 : desglosarIva(total, factura.tiene_factura, factura.tasa_iva).iva,
     odometro,
     folio_ticket: opcional(v.folio_ticket, 40, "folio_ticket", errores),
     foto_ticket_path: archivo(v.foto_ticket_path, empresaId, "foto_ticket_path", errores),
@@ -118,6 +148,7 @@ export interface FinanzasValidadas {
   tarifa: number;
   factura_por: "cargado" | "descargado";
   pago_esquema: ConfigPagoFila["esquema"];
+  pago_base_flete: ConfigPagoFila["base_flete"];
   pago_pct: number | null;
   pago_tarifa_km_cargado: number | null;
   pago_tarifa_km_vacio: number | null;
@@ -135,6 +166,7 @@ export function validarFinanzas(v: Valores): Resultado<FinanzasValidadas> {
   const facturaPor = v.factura_por === "descargado" ? "descargado" : "cargado";
   const pago = validarConfigPago({
     esquema: v.pago_esquema,
+    base_flete: v.pago_base_flete,
     pct: v.pago_pct,
     tarifa_km_cargado: v.pago_tarifa_km_cargado,
     tarifa_km_vacio: v.pago_tarifa_km_vacio,
@@ -151,6 +183,7 @@ export function validarFinanzas(v: Valores): Resultado<FinanzasValidadas> {
       tarifa: tarifa!,
       factura_por: facturaPor,
       pago_esquema: pago.datos.esquema,
+      pago_base_flete: pago.datos.base_flete,
       pago_pct: pago.datos.pct,
       pago_tarifa_km_cargado: pago.datos.tarifa_km_cargado,
       pago_tarifa_km_vacio: pago.datos.tarifa_km_vacio,
@@ -159,4 +192,20 @@ export function validarFinanzas(v: Valores): Resultado<FinanzasValidadas> {
       pago_operador_manual: manual,
     },
   };
+}
+
+export interface CargoAdicionalValidado {
+  concepto: string;
+  /** Subtotal sin IVA que se le cobra al cliente. */
+  monto: number;
+}
+
+/** Cargo adicional al cliente (maniobras, estadías…): concepto y monto sin IVA. */
+export function validarCargoAdicional(v: Valores): Resultado<CargoAdicionalValidado> {
+  const errores: Record<string, string> = {};
+  const concepto = texto(v.concepto);
+  if (concepto.length < 2) errores.concepto = "Escribe el concepto";
+  else if (concepto.length > 80) errores.concepto = "Máximo 80 caracteres";
+  const monto = numero(v.monto, "monto", errores, { requerido: true, minExclusivo: true, max: 10_000_000 });
+  return Object.keys(errores).length ? { ok: false, errores } : { ok: true, datos: { concepto, monto: monto ?? 0 } };
 }

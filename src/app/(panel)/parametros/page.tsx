@@ -44,7 +44,7 @@ async function Contenido() {
         <FormularioPago
           operadorId={null}
           iniciales={Object.fromEntries(
-            ["esquema", "pct", "tarifa_km_cargado", "tarifa_km_vacio", "tarifa_tonelada", "monto_fijo", "sueldo_base_mensual"].map((k) => [
+            ["esquema", "base_flete", "pct", "tarifa_km_cargado", "tarifa_km_vacio", "tarifa_tonelada", "monto_fijo", "sueldo_base_mensual"].map((k) => [
               k,
               valorDeFormulario((pago as Record<string, string | number | null> | null)?.[k] ?? null),
             ]),

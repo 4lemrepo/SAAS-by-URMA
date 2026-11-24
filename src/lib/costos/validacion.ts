@@ -1,12 +1,18 @@
 /** Validación del formulario de costo. Pura; la base vuelve a validar. */
 import { normalizarTexto, parsearNumero } from "@/lib/catalogos/validacion";
+import { desglosarIva, tasaIva, type TasaIva } from "./iva";
 
 export interface CostoValidado {
   fecha: string;
   mes: string;
   meses: number;
   categoria_id: string;
+  /** Total pagado, como dice el comprobante. */
   monto: number;
+  tiene_factura: boolean;
+  tasa_iva: TasaIva;
+  /** IVA acreditable (0 sin factura). */
+  iva: number;
   unidad_id: string | null;
   remolque_id: string | null;
   dolly_id: string | null;
@@ -52,12 +58,18 @@ export function validarCosto(
   const comprobante = t(v.comprobante_path) || null;
   if (comprobante && (!comprobante.startsWith(`${empresaId}/`) || comprobante.includes(".."))) errores.comprobante_path = "Archivo inválido";
 
+  const total = monto !== null && !Number.isNaN(monto) ? Math.round(monto * 100) / 100 : 0;
+  const tieneFactura = v.tiene_factura === "on" || v.tiene_factura === "true";
+  const tasa = tasaIva(v.tasa_iva);
   const datos: CostoValidado = {
     fecha,
     mes: `${mes}-01`,
     meses: meses ?? 1,
     categoria_id: t(v.categoria_id),
-    monto: monto !== null ? Math.round(monto * 100) / 100 : 0,
+    monto: total,
+    tiene_factura: tieneFactura,
+    tasa_iva: tasa,
+    iva: desglosarIva(total, tieneFactura, tasa).iva,
     unidad_id: tipo === "u" ? id : null,
     remolque_id: tipo === "r" ? id : null,
     dolly_id: tipo === "d" ? id : null,
