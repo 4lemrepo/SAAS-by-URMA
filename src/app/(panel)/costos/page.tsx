@@ -1,8 +1,10 @@
+import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { etiquetaDolly, etiquetaRemolque } from "@/lib/armados/armado";
-import { usuarioConPermiso } from "@/lib/auth/sesion";
+import { puede } from "@/lib/auth/permisos";
+import { usuarioQueVe } from "@/lib/auth/sesion";
 import { mesesDelCosto, sumarMeses } from "@/lib/costos/asignacion";
 import { pesos } from "@/lib/formato";
 import { crearClienteServidor } from "@/lib/supabase/server";
@@ -33,7 +35,8 @@ export default function PaginaCostos({ searchParams }: PageProps<"/costos">) {
 }
 
 async function Contenido({ searchParams }: { searchParams: PageProps<"/costos">["searchParams"] }) {
-  const { empresa } = await usuarioConPermiso("editarCatalogos");
+  const { empresa } = await usuarioQueVe("veCostos");
+  if (!puede(empresa.rol, "editarCatalogos")) redirect("/tablero");
   const p = await searchParams;
   const mes = typeof p.mes === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(p.mes) ? p.mes : hoy().slice(0, 7);
   const db = await crearClienteServidor();

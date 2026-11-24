@@ -2,6 +2,7 @@ import "server-only";
 import { litrosTeoricos, rendimientoEsperado } from "@/lib/conciliacion";
 import type { ArmadoHistorico, Costo } from "@/lib/costos/asignacion";
 import { sumarMeses } from "@/lib/costos/asignacion";
+import type { PermisosFinancieros } from "@/lib/auth/permisos";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { leerViajes, paginar, type ViajeCompleto } from "@/lib/viajes/datos";
 import { revisarKm } from "@/lib/viajes/km";
@@ -16,13 +17,20 @@ const ultimoDia = (mes: string) => {
 
 /**
  * Todo lo que necesitan los KPIs de `desdeMes` a `hastaMes` ("aaaa-mm"),
- * más los 12 meses anteriores (comparación y tendencia). Solo para dueño y
- * administración (ven tarifas y costos).
+ * más los 12 meses anteriores (comparación y tendencia). Para dueño y
+ * administración; tarifas, pago y costos solo si los ve (la RLS tampoco los
+ * devuelve sin permiso).
  */
-export async function cargarEntradaKpis(empresaId: string, desdeMes: string, hastaMes: string): Promise<EntradaKpis> {
+export async function cargarEntradaKpis(
+  empresaId: string,
+  desdeMes: string,
+  hastaMes: string,
+  ve: PermisosFinancieros,
+): Promise<EntradaKpis> {
   const db = await crearClienteServidor();
   const inicio = sumarMeses(`${desdeMes}-01`, -12);
-  const permisos = { veTarifas: true, esAdmin: true };
+  const permisos = { veTarifas: ve.veTarifas, veUtilidades: ve.veUtilidades, esAdmin: true };
+  const sinCostos = Promise.resolve({ data: [] as never[], error: null });
   const [delRango, abiertos, unidades, rutas, operadores, clientes, costos, categorias, armados, parametros] = await Promise.all([
     leerViajes(empresaId, { desde: `${inicio}-01`, hasta: ultimoDia(hastaMes) }, permisos, db),
     // Todos los abiertos, para la alerta de viajes con muchos días.
@@ -32,10 +40,10 @@ export async function cargarEntradaKpis(empresaId: string, desdeMes: string, has
     db.from("operadores").select("id, nombre").eq("empresa_id", empresaId),
     db.from("clientes").select("id, nombre").eq("empresa_id", empresaId),
     // Un costo de hasta 60 meses atrás puede seguir aplicando.
-    paginar<{ fecha: string; mes: string; meses: number; monto: number; iva: number; categoria_id: string; unidad_id: string | null; remolque_id: string | null; dolly_id: string | null; cancelado: boolean }>((d, h) =>
+    !ve.veCostos ? sinCostos : paginar<{ fecha: string; mes: string; meses: number; monto: number; iva: number; categoria_id: string; unidad_id: string | null; remolque_id: string | null; dolly_id: string | null; cancelado: boolean }>((d, h) =>
       db.from("costos").select("fecha, mes, meses, monto, iva, categoria_id, unidad_id, remolque_id, dolly_id, cancelado").eq("empresa_id", empresaId).gte("mes", `${sumarMeses(`${inicio}-01`, -59)}-01`).lte("mes", `${hastaMes}-01`).order("id").range(d, h),
     ).then((data) => ({ data, error: null })),
-    db.from("categorias_costo").select("id, nombre, incluir_en_rentabilidad").eq("empresa_id", empresaId),
+    ve.veCostos ? db.from("categorias_costo").select("id, nombre, incluir_en_rentabilidad").eq("empresa_id", empresaId) : sinCostos,
     paginar<{ unidad_id: string; remolque1_id: string; dolly_id: string | null; remolque2_id: string | null; desde: string; hasta: string | null }>((d, h) =>
       db.from("armados").select("unidad_id, remolque1_id, dolly_id, remolque2_id, desde, hasta").eq("empresa_id", empresaId).order("id").range(d, h),
     ).then((data) => ({ data, error: null })),

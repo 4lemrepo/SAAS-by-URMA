@@ -71,17 +71,21 @@ export interface CargoAdicional {
   monto: number;
   cancelado: boolean;
 }
+/** Tarifa del viaje (solo quien ve tarifas). */
 export interface Finanzas {
   tipo_tarifa: "por_tonelada" | "fija";
   tarifa: number;
   factura_por: "cargado" | "descargado";
-  pago_esquema: EsquemaPago;
-  pago_base_flete: BaseFlete;
-  pago_pct: number | null;
-  pago_tarifa_km_cargado: number | null;
-  pago_tarifa_km_vacio: number | null;
-  pago_tarifa_tonelada: number | null;
-  pago_monto_fijo: number | null;
+}
+/** Pago al operador del viaje: esquema y valores que se usaron (solo quien ve utilidades). */
+export interface PagoViaje {
+  esquema: EsquemaPago;
+  base_flete: BaseFlete;
+  pct: number | null;
+  tarifa_km_cargado: number | null;
+  tarifa_km_vacio: number | null;
+  tarifa_tonelada: number | null;
+  monto_fijo: number | null;
   pago_operador_manual: number | null;
 }
 export type EstadoViaje = "abierto" | "cerrado" | "cancelado";
@@ -126,6 +130,12 @@ export interface ViajeCompleto extends Viaje {
   cargosAdicionales: CargoAdicional[];
   /** null si quien consulta no ve tarifas, o si el viaje aún no tiene tarifa. */
   finanzas: Finanzas | null;
+  /** null si quien consulta no ve utilidades, o si el viaje aún no tiene pago. */
+  pago: PagoViaje | null;
+  /**
+   * Cálculos del viaje. Sin "ve utilidades" no hay pago al operador: la
+   * utilidad y el costo variable de aquí no se muestran.
+   */
   resumen: ResumenViaje;
 }
 
@@ -175,13 +185,14 @@ export async function paginar<T>(
 }
 
 /**
- * Viajes de la empresa con todo lo que les pasó. Las finanzas solo vienen si
- * el usuario ve tarifas (RLS de viajes_finanzas también lo impone).
+ * Viajes de la empresa con todo lo que les pasó. La tarifa y los cargos solo
+ * vienen si el usuario ve tarifas, y el pago al operador si ve utilidades (la
+ * RLS de cada tabla también lo impone).
  */
 export async function leerViajes(
   empresaId: string,
   filtros: FiltrosViajes,
-  { veTarifas, esAdmin }: { veTarifas: boolean; esAdmin: boolean },
+  { veTarifas, veUtilidades, esAdmin }: { veTarifas: boolean; veUtilidades: boolean; esAdmin: boolean },
   supabase?: ClienteSupabase,
 ): Promise<ViajeCompleto[]> {
   const db = supabase ?? (await crearClienteServidor());
@@ -203,7 +214,7 @@ export async function leerViajes(
   if (!viajes.length) return [];
   const ids = viajes.map((v) => v.id);
 
-  const [tramos, cargas, gastos, finanzas, cargos, categorias, fuentes, catalogos, parametros, equipo, armados] = await Promise.all([
+  const [tramos, cargas, gastos, finanzas, pagos, cargos, categorias, fuentes, catalogos, parametros, equipo, armados] = await Promise.all([
     porLotes<Tramo & { viaje_id: string }>(ids, (l) =>
       db.from("tramos_viaje").select("id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final, km, ruta_id, km_ruta, motivo_desvio, nota_desvio").in("viaje_id", l),
     ),
@@ -214,7 +225,10 @@ export async function leerViajes(
       db.from("gastos_viaje").select("id, viaje_id, folio, fecha, categoria_id, monto, tiene_factura, tasa_iva, iva, costo, forma_pago, proveedor, numero_comprobante, comprobante_path, facturable_anterior, cancelado, notas").in("viaje_id", l).order("fecha"),
     ),
     veTarifas
-      ? porLotes<Finanzas & { viaje_id: string }>(ids, (l) => db.from("viajes_finanzas").select("*").in("viaje_id", l))
+      ? porLotes<Finanzas & { viaje_id: string }>(ids, (l) => db.from("viajes_finanzas").select("viaje_id, tipo_tarifa, tarifa, factura_por").in("viaje_id", l))
+      : Promise.resolve([]),
+    veUtilidades
+      ? porLotes<PagoViaje & { viaje_id: string }>(ids, (l) => db.from("viajes_pago").select("*").in("viaje_id", l))
       : Promise.resolve([]),
     veTarifas
       ? porLotes<CargoAdicional & { viaje_id: string }>(ids, (l) =>
@@ -248,6 +262,7 @@ export async function leerViajes(
   const gastosDe = agrupar(gastos);
   const cargosDe = agrupar(cargos);
   const finanzasDe = new Map(finanzas.map((f) => [f.viaje_id, f]));
+  const pagoDe = new Map(pagos.map((p) => [p.viaje_id, p]));
 
   return viajes.map((v) => {
     const t = (tramosDe.get(v.id) ?? []).sort((a, b) => (a.tipo === "vacio" ? -1 : 1) - (b.tipo === "vacio" ? -1 : 1));
@@ -268,6 +283,7 @@ export async function leerViajes(
     }));
     const ca = (cargosDe.get(v.id) ?? []).map((x) => ({ ...x, monto: Number(x.monto) }));
     const f = finanzasDe.get(v.id) ?? null;
+    const p = pagoDe.get(v.id) ?? null;
     const a = v.armado_id ? armadoPorId.get(v.armado_id) : undefined;
     return {
       ...v,
@@ -283,24 +299,25 @@ export async function leerViajes(
       gastos: g,
       cargosAdicionales: ca,
       finanzas: f,
+      pago: p,
       resumen: resumirViaje({
         tramos: t.map((x) => ({ tipo: x.tipo, odometroInicial: Number(x.odometro_inicial), odometroFinal: Number(x.odometro_final) })),
         toneladasCargadas: num(v.toneladas_cargadas),
         toneladasDescargadas: num(v.toneladas_descargadas),
         tarifa: f ? { tipo: f.tipo_tarifa, tarifa: Number(f.tarifa), facturaPor: f.factura_por } : null,
         cargosAdicionales: ca.map((x) => ({ concepto: x.concepto, monto: x.monto, cancelado: x.cancelado })),
-        pago: f
+        pago: p
           ? {
-              esquema: f.pago_esquema,
-              baseFlete: f.pago_base_flete,
-              pct: num(f.pago_pct),
-              tarifaKmCargado: num(f.pago_tarifa_km_cargado),
-              tarifaKmVacio: num(f.pago_tarifa_km_vacio),
-              tarifaTonelada: num(f.pago_tarifa_tonelada),
-              montoFijo: num(f.pago_monto_fijo),
+              esquema: p.esquema,
+              baseFlete: p.base_flete,
+              pct: num(p.pct),
+              tarifaKmCargado: num(p.tarifa_km_cargado),
+              tarifaKmVacio: num(p.tarifa_km_vacio),
+              tarifaTonelada: num(p.tarifa_tonelada),
+              montoFijo: num(p.monto_fijo),
             }
           : null,
-        pagoManual: f ? num(f.pago_operador_manual) : null,
+        pagoManual: p ? num(p.pago_operador_manual) : null,
         gastos: g.map((x) => ({ categoria: x.categoria, folio: x.folio, monto: x.monto, iva: x.iva, cancelado: x.cancelado })),
         cargas: c.map((x) => ({
           litros: Number(x.litros),

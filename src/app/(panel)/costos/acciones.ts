@@ -15,17 +15,18 @@ export interface EstadoCosto {
   enviadoEn?: number;
 }
 
+/** Dueño, o administración con "ve costos" (la base vuelve a revisar con ve_costos()). */
 async function sesionAdmin() {
   const sesion = await sesionDeAccion();
   if (!sesion) redirect("/login");
-  return puede(sesion.empresa.rol, "editarCatalogos") ? sesion : null;
+  return puede(sesion.empresa.rol, "editarCatalogos") && sesion.empresa.veCostos ? sesion : null;
 }
 
 export async function guardarCosto(_: EstadoCosto, form: FormData): Promise<EstadoCosto> {
   const v: Record<string, string> = {};
   for (const [k, x] of form.entries()) if (typeof x === "string") v[k] = x;
   const sesion = await sesionAdmin();
-  if (!sesion) return { mensaje: "Solo dueño y administración registran costos", valores: v };
+  if (!sesion) return { mensaje: "No tienes permiso para ver costos", valores: v };
   const r = validarCosto(v, sesion.empresa.empresaId);
   if (!r.ok) return { errores: r.errores, valores: v };
   const folio = (v.folio ?? "").trim() || null;
@@ -40,7 +41,7 @@ export async function guardarCosto(_: EstadoCosto, form: FormData): Promise<Esta
 /** Nada se borra: un costo equivocado se cancela (queda en la bitácora). */
 export async function cancelarCosto(id: string, cancelado: boolean): Promise<string | null> {
   const sesion = await sesionAdmin();
-  if (!sesion) return "Solo dueño y administración cambian costos";
+  if (!sesion) return "No tienes permiso para ver costos";
   const { error } = await sesion.supabase.from("costos").update({ cancelado }).eq("id", id).eq("empresa_id", sesion.empresa.empresaId);
   if (error) return "No se pudo cambiar el costo";
   refresh();
@@ -50,7 +51,7 @@ export async function cancelarCosto(id: string, cancelado: boolean): Promise<str
 /** "¿Tiene factura?" de un costo ya registrado: recalcula el IVA de su total. */
 export async function cambiarFacturaCosto(id: string, tieneFactura: boolean, tasa: TasaIva): Promise<string | null> {
   const sesion = await sesionAdmin();
-  if (!sesion) return "Solo dueño y administración cambian costos";
+  if (!sesion) return "No tienes permiso para ver costos";
   const { data: costo } = await sesion.supabase.from("costos").select("monto").eq("id", id).eq("empresa_id", sesion.empresa.empresaId).maybeSingle();
   if (!costo) return "No se encontró el costo";
   const t = tasaIva(tasa);

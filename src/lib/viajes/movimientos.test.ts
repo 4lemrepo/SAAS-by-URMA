@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validarCarga, validarCargoAdicional, validarFinanzas, validarGasto } from "./movimientos";
+import { validarCarga, validarCargoAdicional, validarGasto, validarPagoViaje, validarTarifa } from "./movimientos";
 
 const E = "11111111-1111-1111-1111-111111111111";
 
@@ -59,15 +59,25 @@ describe("validarCarga", () => {
   });
 });
 
-describe("validarFinanzas", () => {
-  it("tarifa por tonelada con el pago de URMA", () => {
-    const r = validarFinanzas({ tipo_tarifa: "por_tonelada", tarifa: "650", factura_por: "descargado", pago_esquema: "pct_subtotal", pago_pct: "12.6" });
-    expect(r.ok && r.datos).toMatchObject({ tipo_tarifa: "por_tonelada", tarifa: 650, factura_por: "descargado", pago_pct: 12.6, pago_operador_manual: null });
-    const f = validarFinanzas({ tipo_tarifa: "por_tonelada", tarifa: "1360", pago_esquema: "pct_flete", pago_pct: "12.6", pago_base_flete: "cargado" });
-    expect(f.ok && f.datos).toMatchObject({ pago_esquema: "pct_flete", pago_base_flete: "cargado" });
+describe("validarTarifa y validarPagoViaje", () => {
+  it("tarifa por tonelada; el pago de URMA: 12.6 % del flete con peso cargado", () => {
+    const t = validarTarifa({ tipo_tarifa: "por_tonelada", tarifa: "1,360", factura_por: "descargado" });
+    expect(t).toEqual({ ok: true, datos: { tipo_tarifa: "por_tonelada", tarifa: 1360, factura_por: "descargado" } });
+    const p = validarPagoViaje({ pago_esquema: "pct_flete", pago_pct: "12.6", pago_base_flete: "cargado" });
+    expect(p.ok && p.datos).toEqual({
+      esquema: "pct_flete",
+      base_flete: "cargado",
+      pct: 12.6,
+      tarifa_km_cargado: null,
+      tarifa_km_vacio: null,
+      tarifa_tonelada: null,
+      monto_fijo: null,
+      pago_operador_manual: null,
+    });
   });
   it("marca los errores del esquema de pago con su campo", () => {
-    const r = validarFinanzas({ tipo_tarifa: "fija", tarifa: "18000", pago_esquema: "por_km" });
+    expect(validarTarifa({ tipo_tarifa: "x" }).ok).toBe(false);
+    const r = validarPagoViaje({ pago_esquema: "por_km" });
     expect(!r.ok && r.errores).toEqual({ pago_tarifa_km_cargado: "Requerido", pago_tarifa_km_vacio: "Requerido" });
   });
 });

@@ -90,8 +90,10 @@ export interface DefinicionCatalogo {
   calculadas?: readonly { columna: string; etiqueta: string }[];
   /** Columna con la que otro catálogo muestra este registro en una lista de opciones. */
   columnaEtiqueta: string;
-  /** Solo dueño y administración lo ven (p. ej. categorías de costo, que son pesos). */
+  /** Solo dueño y administración lo ven. */
   soloAdmin?: boolean;
+  /** Además, solo quien tiene "ve costos" (categorías de costo, que son pesos). */
+  requiereVeCostos?: boolean;
   orden: string;
 }
 
@@ -265,6 +267,7 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
     columnaEtiqueta: "nombre",
     orden: "nombre",
     soloAdmin: true,
+    requiereVeCostos: true,
   },
   operadores: {
     clave: "operadores",
@@ -399,6 +402,13 @@ export const CATALOGOS: Record<ClaveCatalogo, DefinicionCatalogo> = {
 };
 
 export const CLAVES_CATALOGO = Object.keys(CATALOGOS) as ClaveCatalogo[];
+
+/** ¿Este usuario ve el catálogo? Captura consulta los de operación; los de pesos piden su permiso. */
+export function puedeVerCatalogo(u: { rol: "dueno" | "administracion" | "captura"; veCostos: boolean }, clave: ClaveCatalogo): boolean {
+  const def = CATALOGOS[clave];
+  if (def.soloAdmin && u.rol === "captura") return false;
+  return !def.requiereVeCostos || u.veCostos;
+}
 
 export function esClaveCatalogo(clave: string): clave is ClaveCatalogo {
   return Object.hasOwn(CATALOGOS, clave);

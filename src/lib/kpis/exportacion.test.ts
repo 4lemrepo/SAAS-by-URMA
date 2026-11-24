@@ -29,4 +29,14 @@ describe("hojasTablero", () => {
     expect(nombres).toContain("Margen %");
     expect(nombres).toContain("Utilidad sobre costo %");
   });
+  it("sin «ve utilidades»: solo lo operativo, sin pesos del negocio", () => {
+    const k = calcularKpis(vacia, ["2026-10"]);
+    const hojas = hojasTablero(k, k, tendencia(vacia, ["2026-10"]), "Octubre", false);
+    expect(hojas.map((h) => h.nombre)).toEqual(["Resumen", "Unidades", "Clientes", "Rutas", "Operadores", "Clientes: tiempos", "Alertas", "Tendencia"]);
+    const nombres = hojas[0].filas.map((f) => f[0]);
+    for (const n of ["Viajes", "Km totales", "% km vacío", "Km/l real", "Litros faltantes", "Pesos faltantes", "Km sin viaje"]) expect(nombres).toContain(n);
+    for (const n of ["Ingreso", "Utilidad", "Pago al operador", "Costo total por km", "Costo de diésel", "Margen %"]) expect(nombres).not.toContain(n);
+    expect(hojas[1].filas[0]).not.toContain("Utilidad");
+    expect(hojas[1].filas[0]).toContain("% viajes con desvío");
+  });
 });

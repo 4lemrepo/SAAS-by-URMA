@@ -16,7 +16,10 @@ export default function PaginaUsuarios() {
           ← Tablero
         </Link>
         <h1 className="mt-1 text-2xl font-semibold">Usuarios</h1>
-        <p className="text-sm text-zinc-500">Permisos de cada usuario. Las invitaciones por correo llegan después.</p>
+        <p className="text-sm text-zinc-500">
+          Permisos de cada usuario. Tú los tienes todos; administración ve solo lo que aquí le prendas. Las invitaciones por correo
+          llegan después.
+        </p>
       </div>
       <Suspense fallback={<p className="text-zinc-500">Cargando…</p>}>
         <Contenido />
@@ -31,6 +34,8 @@ interface Usuario {
   rol: Rol;
   puede_reabrir_viajes: boolean;
   ve_tarifas: boolean;
+  ve_utilidades: boolean;
+  ve_costos: boolean;
 }
 
 async function Contenido() {
@@ -53,8 +58,16 @@ async function Contenido() {
             {u.rol === "dueno" && <p className="text-sm text-zinc-500">Todo permitido</p>}
             {u.rol === "administracion" && (
               <>
-                <Interruptor usuarioId={u.usuario_id} permiso="puede_reabrir_viajes" activo={u.puede_reabrir_viajes} etiqueta="Puede reabrir viajes" />
-                <p className="text-xs text-zinc-500">Ve tarifas e ingresos siempre</p>
+                <Interruptor usuarioId={u.usuario_id} permiso="puede_reabrir_viajes" activo={u.puede_reabrir_viajes} etiqueta="Puede reabrir y cancelar viajes" />
+                <Interruptor usuarioId={u.usuario_id} permiso="ve_tarifas" activo={u.ve_tarifas} etiqueta="Ve tarifas e ingresos" />
+                <Interruptor
+                  usuarioId={u.usuario_id}
+                  permiso="ve_utilidades"
+                  activo={u.ve_utilidades && u.ve_tarifas}
+                  etiqueta="Ve utilidades (pago al operador, utilidad, margen, costo/km y tablero financiero)"
+                />
+                <Interruptor usuarioId={u.usuario_id} permiso="ve_costos" activo={u.ve_costos} etiqueta="Ve costos de unidad y generales (captura y consulta)" />
+                {!u.ve_utilidades && <p className="text-xs text-zinc-500">Sin «ve utilidades» ve el tablero operativo.</p>}
               </>
             )}
             {u.rol === "captura" && (

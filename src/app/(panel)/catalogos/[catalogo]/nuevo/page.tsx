@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
 import { leerReferencias } from "@/lib/catalogos/datos";
-import { CATALOGOS, CLAVES_CATALOGO, esClaveCatalogo } from "@/lib/catalogos/definiciones";
+import { CATALOGOS, CLAVES_CATALOGO, esClaveCatalogo, puedeVerCatalogo } from "@/lib/catalogos/definiciones";
 import { FormularioCatalogo } from "../../formulario";
 
 export function generateStaticParams() {
@@ -34,6 +34,7 @@ export default async function PaginaNuevo({ params }: PageProps<"/catalogos/[cat
 
 async function Formulario({ clave }: { clave: keyof typeof CATALOGOS }) {
   const { empresa } = await usuarioConPermiso("editarCatalogos");
+  if (!puedeVerCatalogo(empresa, clave)) redirect("/tablero");
   const referencias = await leerReferencias(CATALOGOS[clave], empresa.empresaId);
   return <FormularioCatalogo clave={clave} id={null} iniciales={{}} referencias={referencias} />;
 }

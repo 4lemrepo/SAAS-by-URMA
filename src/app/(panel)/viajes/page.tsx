@@ -52,7 +52,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
   };
   const db = await crearClienteServidor();
   const [viajes, nombres] = await Promise.all([
-    leerViajes(empresa.empresaId, filtros, { veTarifas: empresa.veTarifas, esAdmin: puede(empresa.rol, "editarCatalogos") }, db),
+    leerViajes(empresa.empresaId, filtros, { veTarifas: empresa.veTarifas, veUtilidades: empresa.veUtilidades, esAdmin: puede(empresa.rol, "editarCatalogos") }, db),
     leerNombres(db, empresa.empresaId),
   ]);
   const selector = (nombre: string, etiqueta: string, opciones: { id: string; texto: string }[], valor?: string, todos = "Todos") => (
@@ -98,7 +98,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
           Filtrar
         </button>
       </form>
-      <ListaViajes viajes={viajes} veTarifas={empresa.veTarifas} nombreArchivo={`viajes-${filtros.desde}-a-${filtros.hasta}.xlsx`} />
+      <ListaViajes viajes={viajes} ve={{ veTarifas: empresa.veTarifas, veUtilidades: empresa.veUtilidades }} nombreArchivo={`viajes-${filtros.desde}-a-${filtros.hasta}.xlsx`} />
     </>
   );
 }

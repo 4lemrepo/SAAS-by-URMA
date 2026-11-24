@@ -9,7 +9,7 @@ import { desglosarIva, tasaIva, type TasaIva } from "@/lib/costos/iva";
 import { ultimoPuntoDeUnidad } from "@/lib/viajes/datos";
 import { localAIso } from "@/lib/viajes/fechas";
 import { validarViaje } from "@/lib/viajes/formulario";
-import { validarCarga, validarCargoAdicional, validarFinanzas, validarGasto } from "@/lib/viajes/movimientos";
+import { validarCarga, validarCargoAdicional, validarGasto, validarPagoViaje, validarTarifa } from "@/lib/viajes/movimientos";
 
 export interface EstadoFormulario {
   mensaje?: string;
@@ -172,19 +172,29 @@ export async function cancelarViaje(id: string, _: EstadoFormulario, form: FormD
 // Tarifa y pago al operador (solo quien ve tarifas)
 // ---------------------------------------------------------------------------
 
+/**
+ * Tarifa (quien ve tarifas) y pago al operador (quien ve utilidades). Sin
+ * "ve utilidades", el viaje toma el pago por defecto del operador o de la
+ * empresa (lo pone la base al guardar la tarifa).
+ */
 export async function guardarFinanzas(viajeId: string, _: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
   const v = valores(form);
   const sesion = await sesionDeAccion();
   if (!sesion) redirect("/login");
-  if (!sesion.empresa.veTarifas) return { mensaje: "No tienes permiso para ver tarifas e ingresos" };
-  const r = validarFinanzas(v);
-  if (!r.ok) return { errores: r.errores, valores: v };
-  const { error } = await sesion.supabase
-    .from("viajes_finanzas")
-    .upsert({ viaje_id: viajeId, empresa_id: sesion.empresa.empresaId, ...r.datos });
+  const { veTarifas, veUtilidades, empresaId } = sesion.empresa;
+  if (!veTarifas) return { mensaje: "No tienes permiso para ver tarifas e ingresos" };
+  const tarifa = validarTarifa(v);
+  const pago = veUtilidades ? validarPagoViaje(v) : null;
+  const errores = { ...(tarifa.ok ? {} : tarifa.errores), ...(pago && !pago.ok ? pago.errores : {}) };
+  if (!tarifa.ok || (pago && !pago.ok)) return { errores, valores: v };
+  const { error } = await sesion.supabase.from("viajes_finanzas").upsert({ viaje_id: viajeId, empresa_id: empresaId, ...tarifa.datos });
   if (error) return { mensaje: mensajeDeError(error, "No se pudo guardar la tarifa"), valores: v };
+  if (pago?.ok) {
+    const { error: e2 } = await sesion.supabase.from("viajes_pago").upsert({ viaje_id: viajeId, empresa_id: empresaId, ...pago.datos });
+    if (e2) return { mensaje: mensajeDeError(e2, "Se guardó la tarifa, pero no el pago al operador"), valores: v };
+  }
   refresh();
-  return { exito: true, mensaje: "Tarifa y pago guardados." };
+  return { exito: true, mensaje: veUtilidades ? "Tarifa y pago guardados." : "Tarifa guardada." };
 }
 
 // ---------------------------------------------------------------------------

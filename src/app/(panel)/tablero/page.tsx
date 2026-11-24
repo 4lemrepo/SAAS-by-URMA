@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { puede } from "@/lib/auth/permisos";
 import { usuarioConEmpresa } from "@/lib/auth/sesion";
-import { CATALOGOS, CLAVES_CATALOGO } from "@/lib/catalogos/definiciones";
+import { CATALOGOS, CLAVES_CATALOGO, puedeVerCatalogo } from "@/lib/catalogos/definiciones";
 import { Indicadores } from "./indicadores";
 
 export const metadata: Metadata = { title: "Tablero · Control Diésel" };
@@ -28,7 +28,7 @@ async function Tablero({ searchParams }: { searchParams: PageProps<"/tablero">["
       {/* Captura no ve el tablero de pesos. */}
       {verKpis && (
         <Suspense fallback={<p className="text-zinc-500">Calculando indicadores…</p>}>
-          <Indicadores empresaId={empresa.empresaId} parametros={await searchParams} />
+          <Indicadores empresaId={empresa.empresaId} parametros={await searchParams} ve={empresa} />
         </Suspense>
       )}
 
@@ -37,7 +37,7 @@ async function Tablero({ searchParams }: { searchParams: PageProps<"/tablero">["
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Tarjeta href="/viajes" titulo="Viajes" texto="Tramos, cargas de diésel, gastos, cierre y exportación." />
           <Tarjeta href="/viajes/nuevo" titulo="Nuevo viaje" texto="Empieza donde terminó el viaje anterior de la unidad." />
-          {editaCatalogos && (
+          {editaCatalogos && empresa.veCostos && (
             <Tarjeta href="/costos" titulo="Costos" texto="Mantenimiento, llantas, seguro, oficina… por equipo y por mes." />
           )}
         </ul>
@@ -56,7 +56,7 @@ async function Tablero({ searchParams }: { searchParams: PageProps<"/tablero">["
                 texto="Plantilla por catálogo o tu control de viajes."
               />
             )}
-            {CLAVES_CATALOGO.filter((clave) => editaCatalogos || !CATALOGOS[clave].soloAdmin).map((clave) => (
+            {CLAVES_CATALOGO.filter((clave) => puedeVerCatalogo(empresa, clave)).map((clave) => (
               <Tarjeta
                 key={clave}
                 href={`/catalogos/${clave}`}
@@ -73,7 +73,7 @@ async function Tablero({ searchParams }: { searchParams: PageProps<"/tablero">["
           <h2 className="text-sm font-medium tracking-wide text-zinc-500 uppercase">Empresa</h2>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {puede(empresa.rol, "administrarUsuarios") && (
-              <Tarjeta href="/usuarios" titulo="Usuarios" texto="Quién puede reabrir viajes y quién ve tarifas e ingresos." />
+              <Tarjeta href="/usuarios" titulo="Usuarios" texto="Quién reabre y cancela viajes, y quién ve tarifas, utilidades y costos." />
             )}
             <Tarjeta
               href="/parametros"

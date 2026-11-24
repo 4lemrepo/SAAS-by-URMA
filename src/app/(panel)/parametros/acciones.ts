@@ -39,8 +39,10 @@ export async function guardarPagoOperador(operadorId: string | null, _: EstadoPa
   for (const [k, x] of form.entries()) if (typeof x === "string") valores[k] = x;
   const sesion = await sesionDeAccion();
   if (!sesion) redirect("/login");
-  // El dueño la cambia en Parámetros; administración (que ve tarifas) en cada operador.
-  const permitido = operadorId ? puede(sesion.empresa.rol, "editarCatalogos") : puede(sesion.empresa.rol, "editarParametros");
+  // El dueño la cambia en Parámetros; administración con "ve utilidades", en cada operador.
+  const permitido = operadorId
+    ? puede(sesion.empresa.rol, "editarCatalogos") && sesion.empresa.veUtilidades
+    : puede(sesion.empresa.rol, "editarParametros");
   if (!permitido) return { mensaje: "No tienes permiso para cambiar el pago", valores };
 
   const db = sesion.supabase;

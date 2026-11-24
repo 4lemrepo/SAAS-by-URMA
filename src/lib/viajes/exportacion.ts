@@ -1,6 +1,6 @@
 /**
- * Filas para exportar viajes a Excel. Sin permiso de tarifas no salen tarifa,
- * ingreso, pago al operador ni utilidad. Los pesos de diésel y gastos son el
+ * Filas para exportar viajes a Excel. Sin "ve tarifas" no salen tarifa, cargos
+ * ni ingreso; sin "ve utilidades", ni pago al operador, costo variable ni utilidad. Los pesos de diésel y gastos son el
  * costo para rentabilidad (sin IVA acreditable); "pagado" es con IVA.
  */
 import type { ResumenViaje } from "./calculos";
@@ -25,7 +25,7 @@ export interface ViajeParaExportar {
 
 export type Celda = string | number | null;
 
-export function filasExportacion(viajes: readonly ViajeParaExportar[], veTarifas: boolean) {
+export function filasExportacion(viajes: readonly ViajeParaExportar[], { veTarifas, veUtilidades }: { veTarifas: boolean; veUtilidades: boolean }) {
   const categorias = [...new Set(viajes.flatMap((v) => Object.keys(v.resumen.gastosPorCategoria)))].sort((a, b) =>
     a.localeCompare(b, "es"),
   );
@@ -37,7 +37,7 @@ export function filasExportacion(viajes: readonly ViajeParaExportar[], veTarifas
     "Litros", "Diésel pagado $", "Diésel $",
     ...categorias.map((c) => `Gasto: ${c}`),
     "Gastos pagados", "Gastos", "IVA acreditable",
-    ...(veTarifas ? ["Pago al operador", "Costo variable", "Utilidad", "Margen %"] : []),
+    ...(veUtilidades ? ["Pago al operador", "Costo variable", "Utilidad", "Margen %"] : []),
   ];
   const tramo = (v: ViajeParaExportar, tipo: "vacio" | "cargado") => {
     const t = v.tramos.find((x) => x.tipo === tipo);
@@ -56,7 +56,7 @@ export function filasExportacion(viajes: readonly ViajeParaExportar[], veTarifas
       r.litros, r.dieselTotal, r.costoDiesel,
       ...categorias.map((c) => r.gastosPorCategoria[c] ?? null),
       r.gastosTotal, r.gastosCosto, r.ivaAcreditable,
-      ...(veTarifas ? [r.pagoOperador, r.costoVariable, r.utilidad, r.margenPct] : []),
+      ...(veUtilidades ? [r.pagoOperador, r.costoVariable, r.utilidad, r.margenPct] : []),
     ];
   });
   return { encabezados, filas };

@@ -7,17 +7,15 @@ import type { User } from "@supabase/supabase-js";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { destinoInicial, motivoBloqueo, type MotivoBloqueo } from "./acceso";
-import { puede, type Permiso, type Rol } from "./permisos";
+import { permisosFinancieros, puede, type Permiso, type PermisosFinancieros, type Rol } from "./permisos";
 
 export type { Rol };
 
-export interface Membresia {
+export interface Membresia extends PermisosFinancieros {
   empresaId: string;
   empresaNombre: string;
   rol: Rol;
-  /** Ve tarifa, ingreso, pago al operador y utilidad (dueño y administración siempre). */
-  veTarifas: boolean;
-  /** Puede reabrir viajes cerrados (dueño siempre; administración si el dueño se lo dio). */
+  /** Puede reabrir y cancelar viajes (dueño siempre; administración si el dueño se lo dio). */
   puedeReabrir: boolean;
 }
 
@@ -90,7 +88,7 @@ export async function membresiasDe(
 ): Promise<Membresia[]> {
   const { data: filas, error } = await supabase
     .from("miembros")
-    .select("empresa_id, rol, ve_tarifas, puede_reabrir_viajes, empresas(nombre)")
+    .select("empresa_id, rol, ve_tarifas, ve_utilidades, ve_costos, puede_reabrir_viajes, empresas(nombre)")
     .eq("usuario_id", usuarioId)
     .order("creado_en");
   // Mejor fallar que tratar un error como "sin empresa" y ofrecer crear otra.
@@ -102,7 +100,7 @@ export async function membresiasDe(
       empresaId: f.empresa_id,
       empresaNombre: (f.empresas as unknown as { nombre: string } | null)?.nombre ?? "",
       rol,
-      veTarifas: rol === "dueno" || rol === "administracion" || f.ve_tarifas === true,
+      ...permisosFinancieros(rol, f),
       puedeReabrir: rol === "dueno" || (rol === "administracion" && f.puede_reabrir_viajes === true),
     };
   });
@@ -120,6 +118,13 @@ export async function usuarioConEmpresa() {
 export async function usuarioSinEmpresa() {
   const usuario = await usuarioActual();
   if (destinoInicial(usuario.membresias) === "/tablero") redirect("/tablero");
+  return usuario;
+}
+
+/** Para pantallas de pesos (costos…): sin el interruptor, al tablero. */
+export async function usuarioQueVe(permiso: keyof PermisosFinancieros) {
+  const usuario = await usuarioConEmpresa();
+  if (!usuario.empresa[permiso]) redirect("/tablero");
   return usuario;
 }
 

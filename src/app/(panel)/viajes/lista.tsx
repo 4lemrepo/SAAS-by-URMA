@@ -6,7 +6,16 @@ import type { ViajeCompleto } from "@/lib/viajes/datos";
 import { filasExportacion } from "@/lib/viajes/exportacion";
 import { formatearFechaHora } from "@/lib/viajes/fechas";
 
-export function ListaViajes({ viajes, veTarifas, nombreArchivo }: { viajes: ViajeCompleto[]; veTarifas: boolean; nombreArchivo: string }) {
+export function ListaViajes({
+  viajes,
+  ve,
+  nombreArchivo,
+}: {
+  viajes: ViajeCompleto[];
+  ve: { veTarifas: boolean; veUtilidades: boolean };
+  nombreArchivo: string;
+}) {
+  const { veTarifas, veUtilidades } = ve;
   const suma = (f: (v: ViajeCompleto) => number | null) => viajes.reduce((s, v) => s + (f(v) ?? 0), 0);
   const totales = {
     km: suma((v) => v.resumen.kmTotales),
@@ -19,7 +28,7 @@ export function ListaViajes({ viajes, veTarifas, nombreArchivo }: { viajes: Viaj
   };
 
   async function exportar() {
-    const { encabezados, filas } = filasExportacion(viajes, veTarifas);
+    const { encabezados, filas } = filasExportacion(viajes, ve);
     const { default: escribirXlsx } = await import("write-excel-file/browser");
     await escribirXlsx(
       [encabezados.map((value) => ({ value, fontWeight: "bold" as const })), ...filas.map((f) => f.map((value) => (value === null ? null : { value })))],
@@ -41,7 +50,7 @@ export function ListaViajes({ viajes, veTarifas, nombreArchivo }: { viajes: Viaj
           {veTarifas && (
             <>
               <span>Ingreso {pesos(totales.ingreso, 0)}</span>
-              <span className={totales.utilidad < 0 ? "text-red-600" : ""}>Utilidad {pesos(totales.utilidad, 0)}</span>
+              {veUtilidades && <span className={totales.utilidad < 0 ? "text-red-600" : ""}>Utilidad {pesos(totales.utilidad, 0)}</span>}
             </>
           )}
         </p>
@@ -89,10 +98,12 @@ export function ListaViajes({ viajes, veTarifas, nombreArchivo }: { viajes: Viaj
                     <p>
                       {numero(v.resumen.kmTotales)} km · {numero(v.resumen.litros)} L
                     </p>
-                    {veTarifas && (
+                    {veUtilidades ? (
                       <p className={(v.resumen.utilidad ?? 0) < 0 ? "text-red-600" : "text-zinc-500"}>
                         {v.resumen.ingreso === null ? "sin tarifa" : `${pesos(v.resumen.utilidad, 0)} (${porcentaje(v.resumen.margenPct)})`}
                       </p>
+                    ) : (
+                      veTarifas && <p className="text-zinc-500">{v.resumen.ingreso === null ? "sin tarifa" : `Ingreso ${pesos(v.resumen.ingreso, 0)}`}</p>
                     )}
                   </div>
                 </Link>

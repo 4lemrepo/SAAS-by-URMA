@@ -1,7 +1,7 @@
 // Datos inventados: nunca usar datos reales de clientes en pruebas.
 import { describe, expect, it } from "vitest";
 import type { Costo } from "@/lib/costos/asignacion";
-import { calcularKpis, entradaConIva, mesDe, mesesAnteriores, mesesEntre, tendencia, variacion, type EntradaKpis, type ViajeKpi } from "./index";
+import { calcularKpis, entradaConIva, esAlertaOperativa, mesDe, mesesAnteriores, mesesEntre, tendencia, variacion, type EntradaKpis, type ViajeKpi } from "./index";
 
 const viaje = (o: Partial<ViajeKpi>): ViajeKpi => ({
   id: "v",
@@ -243,6 +243,19 @@ describe("filtros", () => {
       expect(k.operacion.viajes).toBe(incluirAbiertos ? 3 : 2);
       expect(k.alertas.some((a) => a.viajeId === "v9")).toBe(false);
     }
+  });
+});
+
+describe("permisos", () => {
+  it("sin «ve costos»: contribución, sin costos fijos", () => {
+    const k = calcularKpis(entrada, ["2026-10"], { sinCostosFijos: true });
+    expect(k.sinCostosFijos).toBe(true);
+    expect(k.financieros.costosFijos).toBe(0);
+    expect(k.financieros.utilidad).toBe(11_760);
+  });
+  it("alertas operativas: sin pérdida ni sin tarifa", () => {
+    const tipos = calcularKpis(entrada, ["2026-10"]).alertas.filter(esAlertaOperativa).map((a) => a.tipo).sort();
+    expect(tipos).toEqual(["desvio_sin_motivo", "estadia", "rendimiento", "rendimiento", "viaje_abierto"]);
   });
 });
 

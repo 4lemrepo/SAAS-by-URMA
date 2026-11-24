@@ -102,6 +102,8 @@ export interface Filtros {
   cliente?: string;
   ruta?: string;
   incluirAbiertos?: boolean;
+  /** Sin permiso de ver costos de unidad y generales: solo la contribución. */
+  sinCostosFijos?: boolean;
 }
 
 /**
@@ -270,6 +272,12 @@ export interface Alerta {
   viajeId?: string;
 }
 
+/**
+ * Alertas que ve quien no tiene "ve utilidades" (tablero operativo): las que no
+ * hablan de pesos del viaje (pérdida, sin tarifa).
+ */
+export const esAlertaOperativa = (a: Alerta) => a.tipo !== "perdida" && a.tipo !== "sin_tarifa";
+
 export interface Kpis {
   meses: string[];
   dias: number;
@@ -371,7 +379,7 @@ export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: 
       (!f.cliente || v.clienteId === f.cliente) &&
       (!f.ruta || v.ruta === f.ruta),
   );
-  const sinCostosFijos = !!(f.operador || f.cliente || f.ruta);
+  const sinCostosFijos = !!(f.operador || f.cliente || f.ruta || f.sinCostosFijos);
 
   // Unidades activas: las activas hoy y las que tuvieron viaje en el mes.
   const todosDelMes = (m: string) =>

@@ -586,23 +586,24 @@ begin
 
   -- 51. Tarifas e ingresos: sin el permiso, la base no los devuelve
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
-  insert into viajes_finanzas (viaje_id, empresa_id, tarifa, pago_esquema, pago_pct) values (vj, e, 650, 'pct_subtotal', 12.6);
+  insert into viajes_finanzas (viaje_id, empresa_id, tarifa) values (vj, e, 650);
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
   select count(*) into n from viajes_finanzas; raise notice '51 finanzas que ve captura sin permiso (esperado 0): %', n;
   select count(*) into n from pago_operador_config; raise notice '51b config de pago que ve captura sin permiso (esperado 0): %', n;
   update viajes_finanzas set tarifa = 1; get diagnostics n = row_count;
   raise notice '51c finanzas que captura editó sin permiso (esperado 0): %', n;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
-  select count(*) into n from viajes_finanzas; raise notice '51d finanzas que ve administración (esperado 1): %', n;
+  -- Administración ya no ve tarifas por defecto (migración 20261123000300)
+  select count(*) into n from viajes_finanzas; raise notice '51d finanzas que ve administración sin permiso (esperado 0): %', n;
   update miembros set ve_tarifas = true where usuario_id = '00000000-0000-0000-0000-0000000000a2'; get diagnostics n = row_count;
   raise notice '51e permisos que administración otorgó (esperado 0): %', n;
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
   update miembros set ve_tarifas = true where usuario_id = '00000000-0000-0000-0000-0000000000a2';
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
   select count(*) into n from viajes_finanzas; raise notice '51f finanzas que ve captura con permiso (esperado 1): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
   select pct::text into t from pago_operador_config where operador_id is null;
   raise notice '51g esquema de pago por defecto 12.6 %%: %', case when t = '12.60' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
-  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
   update miembros set ve_tarifas = false where usuario_id = '00000000-0000-0000-0000-0000000000a2';
 
   -- 52. Gastos con folio propio y categorías precargadas
@@ -662,8 +663,11 @@ begin
   exception when raise_exception then raise notice '55b OK: tramos de viaje cerrado no se editan'; end;
   begin insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto) values (e, vj, cat, 10); raise notice '55c FALLA: gasto agregado';
   exception when raise_exception then raise notice '55c OK: no se agregan gastos a un viaje cerrado'; end;
+  -- (como dueño: administración ya no ve tarifas sin el interruptor)
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
   begin update viajes_finanzas set tarifa = 700 where viaje_id = vj; raise notice '55d FALLA: tarifa editada';
   exception when raise_exception then raise notice '55d OK: finanzas de viaje cerrado no se editan'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
   begin update cargas_diesel set viaje_id = null where id = carga; raise notice '55e FALLA: carga sacada del viaje cerrado';
   exception when raise_exception then raise notice '55e OK: cargas de viaje cerrado no se mueven'; end;
 
@@ -729,6 +733,9 @@ end $$;
 do $$
 declare n int; t text; e uuid := (select v from ctx where k='empA'); u uuid; r1 uuid; cat uuid; sueldo uuid; otra uuid;
 begin
+  -- Desde 20261123000300 administración necesita "ve costos".
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_costos = true where usuario_id = '00000000-0000-0000-0000-0000000000a3';
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
   -- 60. Categorías precargadas; el sueldo del operador nace fuera de la rentabilidad
   select count(*) into n from categorias_costo where empresa_id = e; raise notice '60 categorías de costo precargadas (esperado 13): %', n;
@@ -911,4 +918,101 @@ begin
   -- 82b. Captura sigue viendo el viaje (para el filtro de cancelados)
   perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
   select count(*) into n from viajes where id = vj; raise notice '82b captura ve el viaje cancelado (esperado 1): %', n;
+end $$;
+
+-- ---------- Permisos financieros por persona (migración 20261123000300) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  u uuid; vj uuid;
+  adm uuid := '00000000-0000-0000-0000-0000000000a3'; cap uuid := '00000000-0000-0000-0000-0000000000a2';
+begin
+  -- Datos: un viaje abierto con tarifa (y su pago por defecto), un cargo adicional y un costo.
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = false, ve_utilidades = false, ve_costos = false where usuario_id in (adm, cap);
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, toneladas_cargadas) values (e, u, o, now(), 75.54) returning id into vj;
+  insert into viajes_finanzas (viaje_id, empresa_id, tarifa) values (vj, e, 1360);
+  insert into cargos_adicionales (empresa_id, viaje_id, concepto, monto) values (e, vj, 'Maniobra', 800);
+  insert into costos (empresa_id, mes, categoria_id, monto)
+    select e, '2026-11-01', id, 5000 from categorias_costo where empresa_id = e and nombre = 'Oficina';
+  select esquema::text || ' ' || base_flete || ' ' || pct::text into t from viajes_pago where viaje_id = vj;
+  raise notice '90 la tarifa nueva toma el pago por defecto: %', case when t = 'pct_flete cargado 12.60' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from information_schema.columns where table_name = 'viajes_finanzas' and column_name like 'pago%';
+  raise notice '90b el pago ya no vive junto a la tarifa (esperado 0): %', n;
+
+  -- 91. Administración sin interruptores: la base no le devuelve nada financiero
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  select count(*) into n from viajes_finanzas; raise notice '91 tarifas que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from cargos_adicionales; raise notice '91b cargos adicionales que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from viajes_pago; raise notice '91c pagos al operador que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from pago_operador_config; raise notice '91d config de pago que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from costos; raise notice '91e costos que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from categorias_costo; raise notice '91f categorías de costo que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from bitacora where tabla in ('viajes_finanzas', 'cargos_adicionales', 'viajes_pago', 'costos', 'categorias_costo');
+  raise notice '91g bitácora financiera que ve administración sin permiso (esperado 0): %', n;
+  select count(*) into n from bitacora where tabla = 'viajes' and viaje_id = vj;
+  raise notice '91h bitácora operativa que sí ve (esperado 1): %', n;
+  begin insert into costos (empresa_id, mes, categoria_id, monto) select e, '2026-11-01', id, 10 from categorias_gasto where empresa_id = e limit 1;
+    raise notice '91i FALLA: administración sin permiso registró un costo';
+  exception when insufficient_privilege or foreign_key_violation then raise notice '91i OK: sin «ve costos» no registra costos'; end;
+  update viajes_finanzas set tarifa = 1; get diagnostics n = row_count;
+  raise notice '91j tarifas que editó administración sin permiso (esperado 0): %', n;
+  -- Lo operativo sí: viajes y cargas
+  select count(*) into n from viajes where id = vj; raise notice '91k ve el viaje (esperado 1): %', n;
+  update miembros set ve_costos = true where usuario_id = adm; get diagnostics n = row_count;
+  raise notice '91l permisos que administración se dio sola (esperado 0): %', n;
+
+  -- 92. Con "ve tarifas": tarifa, ingreso y cargos, pero no el pago ni utilidades
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = true where usuario_id = adm;
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  select count(*) into n from viajes_finanzas where viaje_id = vj; raise notice '92 tarifa con «ve tarifas» (esperado 1): %', n;
+  select count(*) into n from cargos_adicionales where viaje_id = vj; raise notice '92b cargos con «ve tarifas» (esperado 1): %', n;
+  select count(*) into n from viajes_pago; raise notice '92c pago al operador solo con «ve tarifas» (esperado 0): %', n;
+  select count(*) into n from bitacora where tabla = 'viajes_pago'; raise notice '92d bitácora del pago solo con «ve tarifas» (esperado 0): %', n;
+  begin update viajes_pago set pct = 50 where viaje_id = vj; get diagnostics n = row_count;
+    raise notice '92e pagos que editó solo con «ve tarifas» (esperado 0): %', n; end;
+
+  -- 93. "Ve utilidades" necesita "ve tarifas"
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = false, ve_utilidades = true where usuario_id = adm;
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  select count(*) into n from viajes_pago; raise notice '93 pago con «ve utilidades» sin «ve tarifas» (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = true, ve_utilidades = true where usuario_id = adm;
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  select count(*) into n from viajes_pago where viaje_id = vj; raise notice '93b pago con «ve utilidades» (esperado 1): %', n;
+  select count(*) into n from pago_operador_config where operador_id is null; raise notice '93c config de pago con «ve utilidades» (esperado 1): %', n;
+  update viajes_pago set pago_operador_manual = 9000 where viaje_id = vj; get diagnostics n = row_count;
+  raise notice '93d pago que editó con «ve utilidades» (esperado 1): %', n;
+  select count(*) into n from costos; raise notice '93e costos sin «ve costos» (esperado 0): %', n;
+
+  -- 94. "Ve costos"
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_costos = true where usuario_id = adm;
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  select count(*) into n from costos where mes = '2026-11-01'; raise notice '94 costos con «ve costos» (esperado 1): %', n;
+  select count(*) into n from categorias_costo where empresa_id = e; raise notice '94b categorías de costo con «ve costos» (esperado 13): %', n;
+
+  -- 95. Captura sigue igual: aunque le prendan los interruptores, no ve pago ni costos
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_tarifas = true, ve_utilidades = true, ve_costos = true where usuario_id = cap;
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  select count(*) into n from viajes_finanzas where viaje_id = vj; raise notice '95 captura con «ve tarifas» ve la tarifa (esperado 1): %', n;
+  select count(*) into n from viajes_pago; raise notice '95b pagos que ve captura (esperado 0): %', n;
+  select count(*) into n from costos; raise notice '95c costos que ve captura (esperado 0): %', n;
+
+  -- 96. Quien solo ve tarifas captura la tarifa y el viaje toma el pago por defecto
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set ve_utilidades = false, ve_costos = false where usuario_id = cap;
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e, u, o, now()) returning id into vj;
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  insert into viajes_finanzas (viaje_id, empresa_id, tarifa) values (vj, e, 900);
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select count(*) into n from viajes_pago where viaje_id = vj; raise notice '96 pago por defecto al capturar sin «ve utilidades» (esperado 1): %', n;
+  update miembros set ve_tarifas = false where usuario_id = cap;
+
+  -- 97. El dueño ve los interruptores en la lista de usuarios
+  select count(*) into n from usuarios_de_empresa(e) where usuario_id = adm and ve_tarifas and ve_utilidades and ve_costos;
+  raise notice '97 interruptores en la lista de usuarios (esperado 1): %', n;
 end $$;

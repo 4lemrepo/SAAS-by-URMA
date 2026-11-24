@@ -38,7 +38,7 @@ const viaje: ViajeParaExportar = {
 
 describe("filasExportacion", () => {
   it("con permiso incluye tarifa, ingreso, pago y utilidad, y una columna por categoría de gasto", () => {
-    const { encabezados, filas } = filasExportacion([viaje], true);
+    const { encabezados, filas } = filasExportacion([viaje], { veTarifas: true, veUtilidades: true });
     const fila = Object.fromEntries(encabezados.map((e, i) => [e, filas[0][i]]));
     expect(fila).toMatchObject({
       Folio: "URMA-0182",
@@ -56,8 +56,13 @@ describe("filasExportacion", () => {
       Utilidad: 37500,
     });
   });
+  it("solo con «ve tarifas»: tarifa e ingreso, pero no pago ni utilidad", () => {
+    const { encabezados } = filasExportacion([viaje], { veTarifas: true, veUtilidades: false });
+    expect(encabezados).toContain("Ingreso");
+    for (const c of ["Pago al operador", "Costo variable", "Utilidad", "Margen %"]) expect(encabezados).not.toContain(c);
+  });
   it("sin permiso no salen tarifa, ingreso, pago ni utilidad", () => {
-    const { encabezados } = filasExportacion([viaje], false);
+    const { encabezados } = filasExportacion([viaje], { veTarifas: false, veUtilidades: false });
     for (const c of ["Tarifa", "Flete", "Cargos adicionales", "Ingreso", "Pago al operador", "Utilidad", "Margen %"]) expect(encabezados).not.toContain(c);
     expect(encabezados).toContain("Gasto: Casetas");
   });

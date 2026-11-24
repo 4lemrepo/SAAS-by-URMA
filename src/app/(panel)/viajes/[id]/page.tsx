@@ -6,8 +6,8 @@ import { puede, puedeRevisarCarga } from "@/lib/auth/permisos";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
 import { numero, pesos, porcentaje } from "@/lib/formato";
 import { crearClienteServidor } from "@/lib/supabase/server";
-import { horasEntre } from "@/lib/viajes/calculos";
-import { datosParaFormulario, leerViajes, type ViajeCompleto } from "@/lib/viajes/datos";
+import { horasEntre, type RenglonUtilidad } from "@/lib/viajes/calculos";
+import { datosParaFormulario, leerViajes, type PagoViaje, type ViajeCompleto } from "@/lib/viajes/datos";
 import { formatearFechaHora, isoALocal } from "@/lib/viajes/fechas";
 import { MOTIVOS_DESVIO } from "@/lib/viajes/formulario";
 import { revisarKm } from "@/lib/viajes/km";
@@ -38,7 +38,7 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
   const { empresa, id: usuarioId } = await usuarioConPermiso("capturar");
   const esAdmin = puede(empresa.rol, "editarCatalogos");
   const db = await crearClienteServidor();
-  const [viaje] = await leerViajes(empresa.empresaId, { ids: [id] }, { veTarifas: empresa.veTarifas, esAdmin }, db);
+  const [viaje] = await leerViajes(empresa.empresaId, { ids: [id] }, { veTarifas: empresa.veTarifas, veUtilidades: empresa.veUtilidades, esAdmin }, db);
   if (!viaje) notFound();
   const abierto = viaje.estado === "abierto";
   const r = viaje.resumen;
@@ -50,7 +50,7 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
     urlsFirmadas(db, "tickets", viaje.cargas.map((c) => [c.id, c.foto_ticket_path])),
     urlsFirmadas(db, "comprobantes", viaje.gastos.map((g) => [g.id, g.comprobante_path])),
     db.rpc("tolerancia_km", { p_empresa: empresa.empresaId }),
-    empresa.veTarifas
+    empresa.veUtilidades
       ? db.from("pago_operador_config").select("*").eq("empresa_id", empresa.empresaId)
       : Promise.resolve({ data: [] as (ConfigPagoFila & { operador_id: string | null })[] }),
   ]);
@@ -93,22 +93,15 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
 
       {empresa.veTarifas && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Ingreso y utilidad</h2>
-          {viaje.finanzas ? (
+          <h2 className="text-lg font-semibold">{empresa.veUtilidades ? "Ingreso y utilidad" : "Ingreso"}</h2>
+          {!viaje.finanzas ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400">Este viaje todavía no tiene tarifa.</p>
+          ) : !empresa.veUtilidades ? (
+            // Sin "ve utilidades": el ingreso, pero no el pago al operador ni la utilidad.
+            <Renglones renglones={r.renglones.filter((x) => x.tipo === "ingreso" || x.concepto.startsWith("Ingreso"))} />
+          ) : (
             <>
-              <table className="w-full max-w-2xl text-sm">
-                <tbody>
-                  {r.renglones.map((x, n) => (
-                    <tr key={n} className={`border-t border-zinc-100 dark:border-zinc-800 ${x.tipo === "total" ? "font-semibold" : ""}`}>
-                      <td className={`py-1 pr-3 ${x.tipo === "costo" ? "pl-4 text-zinc-600 dark:text-zinc-400" : ""}`}>
-                        {x.tipo === "costo" ? "− " : ""}
-                        {x.concepto}
-                      </td>
-                      <td className={`py-1 text-right ${(x.monto ?? 0) < 0 ? "text-red-600" : ""}`}>{pesos(x.monto)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <Renglones renglones={r.renglones} />
               <p className="text-sm text-zinc-500">
                 Utilidad de contribución: no incluye costos fijos (mantenimiento, llantas, seguro, oficina…), que están en Costos y
                 en el tablero. Los costos van sin el IVA acreditable de lo que tiene factura ({pesos(r.ivaAcreditable)} en este
@@ -118,18 +111,23 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
                 <Dato titulo="Margen %" valor={porcentaje(r.margenPct)} />
                 <Dato titulo="Utilidad sobre costo %" valor={porcentaje(r.utilidadSobreCostoPct)} />
                 <Dato titulo="Merma" valor={r.mermaToneladas === null ? "—" : `${numero(r.mermaToneladas, 2)} t (${porcentaje(r.mermaPct)}) · ${pesos(r.mermaPesos)}`} />
-                <Dato titulo="Pago calculado con" valor={describirPago(finanzasComoConfig(viaje))} />
+                <Dato titulo="Pago calculado con" valor={viaje.pago ? describirPago(pagoComoConfig(viaje.pago)) : "Sin esquema de pago"} />
               </dl>
             </>
-          ) : (
-            <p className="text-sm text-amber-700 dark:text-amber-400">Este viaje todavía no tiene tarifa.</p>
           )}
           <SeccionCargosAdicionales viajeId={viaje.id} abierto={abierto} cargos={viaje.cargosAdicionales} />
           {abierto && (
             <details open={!viaje.finanzas}>
-              <summary className="cursor-pointer text-sm font-medium">{viaje.finanzas ? "Cambiar tarifa y pago" : "Capturar tarifa y pago"}</summary>
+              <summary className="cursor-pointer text-sm font-medium">
+                {viaje.finanzas ? "Cambiar tarifa" : "Capturar tarifa"}
+                {empresa.veUtilidades ? " y pago" : ""}
+              </summary>
               <div className="mt-3">
-                <FormularioFinanzas viajeId={viaje.id} iniciales={inicialesFinanzas(viaje, (pagoConfigs.data ?? []) as (ConfigPagoFila & { operador_id: string | null })[])} />
+                <FormularioFinanzas
+                  viajeId={viaje.id}
+                  conPago={empresa.veUtilidades}
+                  iniciales={inicialesFinanzas(viaje, (pagoConfigs.data ?? []) as (ConfigPagoFila & { operador_id: string | null })[])}
+                />
               </div>
             </details>
           )}
@@ -287,46 +285,31 @@ function inicialesViaje(v: ViajeCompleto): Record<string, string> {
   };
 }
 
-function finanzasComoConfig(v: ViajeCompleto): ConfigPagoFila {
-  const f = v.finanzas!;
+function pagoComoConfig(p: PagoViaje): ConfigPagoFila {
   return {
-    esquema: f.pago_esquema,
-    base_flete: f.pago_base_flete,
-    pct: f.pago_pct,
-    tarifa_km_cargado: f.pago_tarifa_km_cargado,
-    tarifa_km_vacio: f.pago_tarifa_km_vacio,
-    tarifa_tonelada: f.pago_tarifa_tonelada,
-    monto_fijo: f.pago_monto_fijo,
+    esquema: p.esquema,
+    base_flete: p.base_flete,
+    pct: p.pct,
+    tarifa_km_cargado: p.tarifa_km_cargado,
+    tarifa_km_vacio: p.tarifa_km_vacio,
+    tarifa_tonelada: p.tarifa_tonelada,
+    monto_fijo: p.monto_fijo,
     sueldo_base_mensual: null,
   };
 }
 
-/** Tarifa del viaje; si aún no tiene, el peso del cliente y el pago del operador (o de la empresa). */
+/** Tarifa y pago del viaje; si aún no tiene, el peso del cliente y el pago del operador (o de la empresa). */
 function inicialesFinanzas(
   v: ViajeCompleto,
   configs: (ConfigPagoFila & { operador_id: string | null })[],
 ): Record<string, string> {
   const s = (x: unknown) => (x === null || x === undefined ? "" : String(x));
-  if (v.finanzas) {
-    const f = v.finanzas;
-    return {
-      tipo_tarifa: f.tipo_tarifa,
-      tarifa: s(f.tarifa),
-      factura_por: f.factura_por,
-      pago_esquema: f.pago_esquema,
-      pago_base_flete: f.pago_base_flete,
-      pago_pct: s(f.pago_pct),
-      pago_tarifa_km_cargado: s(f.pago_tarifa_km_cargado),
-      pago_tarifa_km_vacio: s(f.pago_tarifa_km_vacio),
-      pago_tarifa_tonelada: s(f.pago_tarifa_tonelada),
-      pago_monto_fijo: s(f.pago_monto_fijo),
-      pago_operador_manual: s(f.pago_operador_manual),
-    };
-  }
-  const c = configParaOperador(configs, v.operador_id);
+  const tarifa: Record<string, string> = v.finanzas
+    ? { tipo_tarifa: v.finanzas.tipo_tarifa, tarifa: s(v.finanzas.tarifa), factura_por: v.finanzas.factura_por }
+    : { tipo_tarifa: "por_tonelada", factura_por: v.facturaPorCliente ?? "cargado" };
+  const c = v.pago ?? configParaOperador(configs, v.operador_id);
   return {
-    tipo_tarifa: "por_tonelada",
-    factura_por: v.facturaPorCliente ?? "cargado",
+    ...tarifa,
     pago_esquema: c?.esquema ?? "pct_flete",
     pago_base_flete: c?.base_flete ?? "cargado",
     pago_pct: s(c?.pct),
@@ -334,7 +317,26 @@ function inicialesFinanzas(
     pago_tarifa_km_vacio: s(c?.tarifa_km_vacio),
     pago_tarifa_tonelada: s(c?.tarifa_tonelada),
     pago_monto_fijo: s(c?.monto_fijo),
+    pago_operador_manual: s(v.pago?.pago_operador_manual),
   };
+}
+
+function Renglones({ renglones }: { renglones: RenglonUtilidad[] }) {
+  return (
+    <table className="w-full max-w-2xl text-sm">
+      <tbody>
+        {renglones.map((x, n) => (
+          <tr key={n} className={`border-t border-zinc-100 dark:border-zinc-800 ${x.tipo === "total" ? "font-semibold" : ""}`}>
+            <td className={`py-1 pr-3 ${x.tipo === "costo" ? "pl-4 text-zinc-600 dark:text-zinc-400" : ""}`}>
+              {x.tipo === "costo" ? "− " : ""}
+              {x.concepto}
+            </td>
+            <td className={`py-1 text-right ${(x.monto ?? 0) < 0 ? "text-red-600" : ""}`}>{pesos(x.monto)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 const ETIQUETA_CAMPO: Record<string, string> = {
@@ -352,6 +354,10 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   concepto: "Concepto",
   pago_esquema: "Esquema de pago",
   pago_base_flete: "Base del % del flete",
+  esquema: "Esquema de pago",
+  base_flete: "Base del % del flete",
+  pct: "Porcentaje",
+  pago_operador_manual: "Pago manual",
   odometro_inicial: "Odómetro inicial",
   odometro_final: "Odómetro final",
   litros: "Litros",
@@ -359,7 +365,8 @@ const ETIQUETA_CAMPO: Record<string, string> = {
 const NOMBRE_TABLA: Record<string, string> = {
   viajes: "Viaje",
   tramos_viaje: "Tramo",
-  viajes_finanzas: "Tarifa y pago",
+  viajes_finanzas: "Tarifa",
+  viajes_pago: "Pago al operador",
   gastos_viaje: "Gasto",
   cargas_diesel: "Carga de diésel",
   cargos_adicionales: "Cargo adicional",

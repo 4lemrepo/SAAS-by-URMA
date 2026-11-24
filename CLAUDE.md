@@ -16,7 +16,10 @@ GPS/telemetría, facturación y cobranza, captura sin señal (offline).
 El operador (chofer) **no es usuario**: es un registro del catálogo `operadores` para saber quién
 manejó cada viaje y medir su rendimiento. Los usuarios (`miembros.rol`) son:
 - `dueno`: todo (usuarios, parámetros, catálogos, viajes, cargas, tablero y conciliación).
-- `administracion`: catálogos, viajes, cargas, validar cargas, tablero y conciliación. No administra usuarios ni parámetros.
+- `administracion`: catálogos, viajes, cargas, validar cargas, tablero operativo y conciliación. No administra usuarios ni parámetros.
+  Lo financiero solo con los interruptores que le da el dueño: `ve_tarifas` (tarifa, cargos e ingreso), `ve_utilidades`
+  (pago al operador, utilidad, margen, costo/km, tablero financiero; requiere `ve_tarifas`) y `ve_costos` (costos de unidad y
+  generales). Captura solo puede tener `ve_tarifas`.
 - `captura`: da de alta viajes y cargas con foto; consulta catálogos. No edita catálogos ni
   parámetros, no valida cargas, no ve el tablero de pesos ni la conciliación.
 Toda carga nace `pendiente`; la valida o rechaza dueño o administración. Administración y captura
@@ -37,8 +40,11 @@ Next.js (App Router, TypeScript, Tailwind) · Supabase (Postgres + Auth + Storag
   `src/lib/viajes/calculos.ts` (flete, pago al operador, utilidad, merma), `src/lib/costos/`
   (asignación de costos) y `src/lib/kpis/` (tablero). Cualquier cambio de fórmula requiere prueba que
   lo cubra. No duplicar la lógica en SQL ni en componentes.
-- **Tarifas e ingresos:** solo en `viajes_finanzas` y `pago_operador_config`, protegidas por
-  `ve_tarifas()`. Nunca devolver tarifa, ingreso, pago o utilidad a quien no tiene el permiso.
+- **Tarifas e ingresos:** tarifa en `viajes_finanzas` y cargos en `cargos_adicionales` (`ve_tarifas()`); pago al operador
+  en `viajes_pago` y `pago_operador_config` (`ve_utilidades()`); costos en `costos` (`ve_costos()`). Nunca devolver tarifa,
+  ingreso, pago, utilidad o costos a quien no tiene el permiso.
+- **Montos:** se captura el total del ticket y si tiene factura; el IVA lo calcula `src/lib/costos/iva.ts`. La rentabilidad
+  usa el costo sin IVA acreditable.
 - **Nada se borra:** se desactiva o se cancela, y queda en la `bitacora`.
 - **Parámetros:** tolerancia, precio del diésel y rendimientos son datos de cada empresa, nunca constantes en código.
 - Antes de cada commit: `npm test`, `npm run typecheck`, `npm run lint`, y si tocaste SQL,

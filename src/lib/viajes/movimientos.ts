@@ -143,27 +143,38 @@ export function validarCarga(v: Valores, empresaId: string): Resultado<CargaVali
   return Object.keys(errores).length ? { ok: false, errores } : { ok: true, datos };
 }
 
-export interface FinanzasValidadas {
+export interface TarifaValidada {
   tipo_tarifa: "por_tonelada" | "fija";
+  /** $ por tonelada o monto fijo, sin IVA. */
   tarifa: number;
   factura_por: "cargado" | "descargado";
-  pago_esquema: ConfigPagoFila["esquema"];
-  pago_base_flete: ConfigPagoFila["base_flete"];
-  pago_pct: number | null;
-  pago_tarifa_km_cargado: number | null;
-  pago_tarifa_km_vacio: number | null;
-  pago_tarifa_tonelada: number | null;
-  pago_monto_fijo: number | null;
-  pago_operador_manual: number | null;
 }
 
-/** Tarifa del flete y pago al operador del viaje (campos de pago con prefijo "pago_"). */
-export function validarFinanzas(v: Valores): Resultado<FinanzasValidadas> {
+/** Tarifa del flete (quien ve tarifas). */
+export function validarTarifa(v: Valores): Resultado<TarifaValidada> {
   const errores: Record<string, string> = {};
   const tipo = v.tipo_tarifa === "fija" ? "fija" : v.tipo_tarifa === "por_tonelada" ? "por_tonelada" : null;
   if (!tipo) errores.tipo_tarifa = "Elige el tipo de tarifa";
   const tarifa = numero(v.tarifa, "tarifa", errores, { requerido: true, max: 10_000_000 });
   const facturaPor = v.factura_por === "descargado" ? "descargado" : "cargado";
+  if (Object.keys(errores).length) return { ok: false, errores };
+  return { ok: true, datos: { tipo_tarifa: tipo!, tarifa: tarifa!, factura_por: facturaPor } };
+}
+
+export interface PagoViajeValidado {
+  esquema: ConfigPagoFila["esquema"];
+  base_flete: ConfigPagoFila["base_flete"];
+  pct: number | null;
+  tarifa_km_cargado: number | null;
+  tarifa_km_vacio: number | null;
+  tarifa_tonelada: number | null;
+  monto_fijo: number | null;
+  pago_operador_manual: number | null;
+}
+
+/** Pago al operador del viaje (quien ve utilidades). Los campos llegan con prefijo "pago_". */
+export function validarPagoViaje(v: Valores): Resultado<PagoViajeValidado> {
+  const errores: Record<string, string> = {};
   const pago = validarConfigPago({
     esquema: v.pago_esquema,
     base_flete: v.pago_base_flete,
@@ -176,22 +187,9 @@ export function validarFinanzas(v: Valores): Resultado<FinanzasValidadas> {
   if (!pago.ok) for (const [k, m] of Object.entries(pago.errores)) errores[k === "esquema" ? "pago_esquema" : `pago_${k}`] = m;
   const manual = numero(v.pago_operador_manual, "pago_operador_manual", errores, { max: 10_000_000 });
   if (Object.keys(errores).length || !pago.ok) return { ok: false, errores };
-  return {
-    ok: true,
-    datos: {
-      tipo_tarifa: tipo!,
-      tarifa: tarifa!,
-      factura_por: facturaPor,
-      pago_esquema: pago.datos.esquema,
-      pago_base_flete: pago.datos.base_flete,
-      pago_pct: pago.datos.pct,
-      pago_tarifa_km_cargado: pago.datos.tarifa_km_cargado,
-      pago_tarifa_km_vacio: pago.datos.tarifa_km_vacio,
-      pago_tarifa_tonelada: pago.datos.tarifa_tonelada,
-      pago_monto_fijo: pago.datos.monto_fijo,
-      pago_operador_manual: manual,
-    },
-  };
+  const { sueldo_base_mensual: _, ...datos } = pago.datos;
+  void _;
+  return { ok: true, datos: { ...datos, pago_operador_manual: manual } };
 }
 
 export interface CargoAdicionalValidado {

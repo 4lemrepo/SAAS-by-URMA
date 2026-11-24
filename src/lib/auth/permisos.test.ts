@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { puede, puedeRevisarCarga } from "./permisos";
+import { permisosFinancieros, puede, puedeRevisarCarga } from "./permisos";
 
 describe("puede", () => {
   it("el dueño puede todo", () => {
@@ -40,5 +40,24 @@ describe("puedeRevisarCarga", () => {
   it("captura no revisa; una carga ya revisada no se vuelve a revisar", () => {
     expect(puedeRevisarCarga("captura", "otro", pendiente)).toBe(false);
     expect(puedeRevisarCarga("administracion", "u-admin", { ...pendiente, estado: "validada" })).toBe(false);
+  });
+});
+
+describe("permisosFinancieros", () => {
+  const todo = { ve_tarifas: true, ve_utilidades: true, ve_costos: true };
+  it("el dueño los tiene siempre", () => {
+    expect(permisosFinancieros("dueno", {})).toEqual({ veTarifas: true, veUtilidades: true, veCostos: true });
+  });
+  it("administración ya no los tiene por defecto; los da el dueño uno por uno", () => {
+    expect(permisosFinancieros("administracion", {})).toEqual({ veTarifas: false, veUtilidades: false, veCostos: false });
+    expect(permisosFinancieros("administracion", { ve_tarifas: true })).toEqual({ veTarifas: true, veUtilidades: false, veCostos: false });
+    expect(permisosFinancieros("administracion", { ve_costos: true })).toEqual({ veTarifas: false, veUtilidades: false, veCostos: true });
+    expect(permisosFinancieros("administracion", todo)).toEqual({ veTarifas: true, veUtilidades: true, veCostos: true });
+  });
+  it("ve utilidades necesita ve tarifas (sin ingreso no hay utilidad)", () => {
+    expect(permisosFinancieros("administracion", { ve_utilidades: true }).veUtilidades).toBe(false);
+  });
+  it("captura: solo tarifas, como hoy", () => {
+    expect(permisosFinancieros("captura", todo)).toEqual({ veTarifas: true, veUtilidades: false, veCostos: false });
   });
 });

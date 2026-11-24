@@ -95,6 +95,8 @@ describe("tablero (usuarioConEmpresa)", () => {
       empresaNombre: "URMA Logistic",
       rol: "dueno",
       veTarifas: true,
+      veUtilidades: true,
+      veCostos: true,
       puedeReabrir: true,
     });
   });

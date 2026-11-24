@@ -309,7 +309,7 @@ export function SeccionGastos({
   );
 }
 
-export function FormularioFinanzas({ viajeId, iniciales }: { viajeId: string; iniciales: Record<string, string> }) {
+export function FormularioFinanzas({ viajeId, iniciales, conPago }: { viajeId: string; iniciales: Record<string, string>; conPago: boolean }) {
   const [estado, accion] = useActionState(guardarFinanzas.bind(null, viajeId), {});
   const v = estado.valores ?? iniciales;
   const [esquema, setEsquema] = useState<EsquemaPago>((v.pago_esquema as EsquemaPago) || "pct_subtotal");
@@ -339,6 +339,7 @@ export function FormularioFinanzas({ viajeId, iniciales }: { viajeId: string; in
           ]}
         />
       </div>
+      {conPago && (
       <div className="grid gap-3 sm:grid-cols-3">
         <Selector
           etiqueta="Pago al operador"
@@ -372,7 +373,8 @@ export function FormularioFinanzas({ viajeId, iniciales }: { viajeId: string; in
           error={e.pago_operador_manual}
         />
       </div>
-      <BotonEnviar pendiente="Guardando…">Guardar tarifa y pago</BotonEnviar>
+      )}
+      <BotonEnviar pendiente="Guardando…">{conPago ? "Guardar tarifa y pago" : "Guardar tarifa"}</BotonEnviar>
     </form>
   );
 }

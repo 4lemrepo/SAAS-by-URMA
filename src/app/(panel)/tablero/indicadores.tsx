@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { numero, pesos, porcentaje } from "@/lib/formato";
-import { calcularKpis, entradaConIva, mesesAnteriores, mesesEntre, tendencia, variacion, type Filtros, type FilaGrupo, type Kpis } from "@/lib/kpis";
+import type { PermisosFinancieros } from "@/lib/auth/permisos";
+import { calcularKpis, entradaConIva, esAlertaOperativa, mesesAnteriores, mesesEntre, tendencia, variacion, type Filtros, type FilaGrupo, type Kpis } from "@/lib/kpis";
 import { cargarEntradaKpis } from "@/lib/kpis/datos";
 import { hojasTablero } from "@/lib/kpis/exportacion";
-import { COLUMNAS_RANKING, GRUPOS_INDICADORES, PRINCIPALES, TODOS_LOS_INDICADORES, type Formato, type Indicador } from "@/lib/kpis/indicadores";
+import { columnasRanking, GRUPOS_INDICADORES, PRINCIPALES, TODOS_LOS_INDICADORES, type Formato, type Indicador } from "@/lib/kpis/indicadores";
 import { hoy } from "@/lib/viajes/fechas";
 import { ExportarTablero } from "./exportar";
 
@@ -17,8 +18,21 @@ export function fmt(v: number | null, f: Formato) {
   return numero(v);
 }
 
-/** Tablero de KPIs para dueño y administración. */
-export async function Indicadores({ empresaId, parametros }: { empresaId: string; parametros: Record<string, string | string[] | undefined> }) {
+/**
+ * Tablero de KPIs para dueño y administración. Sin "ve utilidades" es el
+ * tablero operativo (viajes, km, km/l, litros y pesos faltantes, desvíos, km
+ * sin viaje y alertas operativas); sin "ve costos", la utilidad es la contribución.
+ */
+export async function Indicadores({
+  empresaId,
+  parametros,
+  ve,
+}: {
+  empresaId: string;
+  parametros: Record<string, string | string[] | undefined>;
+  ve: PermisosFinancieros;
+}) {
+  const financiero = ve.veUtilidades;
   const uno = (k: string) => (typeof parametros[k] === "string" ? (parametros[k] as string) : "");
   const actual = hoy().slice(0, 7);
   let desde = MES.test(uno("desde")) ? uno("desde") : actual;
@@ -30,11 +44,12 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
     cliente: UUID.test(uno("cliente")) ? uno("cliente") : undefined,
     ruta: uno("ruta") || undefined,
     incluirAbiertos: uno("abiertos") === "1",
+    sinCostosFijos: !ve.veCostos,
   };
 
   // "Mostrar con IVA": diésel, gastos y costos con lo pagado, para comparar contra un control que trae el IVA.
-  const conIva = uno("iva") === "1";
-  const cargada = await cargarEntradaKpis(empresaId, desde, hasta);
+  const conIva = financiero && uno("iva") === "1";
+  const cargada = await cargarEntradaKpis(empresaId, desde, hasta, ve);
   const entrada = conIva ? entradaConIva(cargada) : cargada;
   const meses = mesesEntre(desde, hasta);
   const anteriores = mesesAnteriores(desde, meses.length);
@@ -42,7 +57,9 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
   const ant = calcularKpis(entrada, anteriores, filtros);
   const tend = tendencia(entrada, [...mesesAnteriores(hasta, 11), hasta], filtros);
   const titulo = desde === hasta ? desde : `${desde} a ${hasta}`;
-  const visible = (i: Indicador) => !(k.sinCostosFijos && i.usaCostosFijos);
+  const visible = (i: Indicador) => (financiero || !i.financiero) && !(k.sinCostosFijos && i.usaCostosFijos);
+  const alertas = financiero ? k.alertas : k.alertas.filter(esAlertaOperativa);
+  const grupos = GRUPOS_INDICADORES.map((g) => ({ ...g, indicadores: g.indicadores.filter(visible) })).filter((g) => g.indicadores.length);
   const rutas = [...new Set(entrada.viajes.map((v) => v.ruta).filter((r): r is string => !!r))].sort();
 
   const selector = (nombre: string, etiqueta: string, opciones: [string, string][], valor?: string) => (
@@ -78,10 +95,12 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           <input type="checkbox" name="abiertos" value="1" defaultChecked={filtros.incluirAbiertos} />
           Incluir abiertos
         </label>
-        <label className="flex items-center gap-2 pb-2 text-sm">
-          <input type="checkbox" name="iva" value="1" defaultChecked={conIva} />
-          Mostrar con IVA
-        </label>
+        {financiero && (
+          <label className="flex items-center gap-2 pb-2 text-sm">
+            <input type="checkbox" name="iva" value="1" defaultChecked={conIva} />
+            Mostrar con IVA
+          </label>
+        )}
         <button type="submit" className="rounded-md border border-zinc-300 px-4 py-2 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
           Ver
         </button>
@@ -90,10 +109,10 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-zinc-500">
           {titulo} · contra {anteriores[0] === anteriores.at(-1) ? anteriores[0] : `${anteriores[0]} a ${anteriores.at(-1)}`} ·{" "}
-          {filtros.incluirAbiertos ? "viajes abiertos y cerrados" : "solo viajes cerrados"} ·{" "}
-          {conIva ? "costos con IVA (lo pagado)" : "costo real, sin IVA acreditable"}
+          {filtros.incluirAbiertos ? "viajes abiertos y cerrados" : "solo viajes cerrados"}
+          {financiero ? (conIva ? " · costos con IVA (lo pagado)" : " · costo real, sin IVA acreditable") : " · tablero operativo"}
         </p>
-        <ExportarTablero hojas={hojasTablero(k, ant, tend, `Tablero ${titulo}`)} nombreArchivo={`tablero-${titulo.replace(/ /g, "")}${conIva ? "-con-iva" : ""}.xlsx`} />
+        <ExportarTablero hojas={hojasTablero(k, ant, tend, `Tablero ${titulo}`, financiero)} nombreArchivo={`tablero-${titulo.replace(/ /g, "")}${conIva ? "-con-iva" : ""}.xlsx`} />
       </div>
 
       {conIva && (
@@ -102,13 +121,19 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           trae diésel y casetas con IVA; la utilidad real es la que se ve sin esta opción.
         </p>
       )}
-      {k.sinCostosFijos && (
+      {financiero && !ve.veCostos && (
+        <p className="rounded-md bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-800">
+          No tienes el permiso de ver costos de unidad y generales: la utilidad que ves es la contribución (ingreso − costo
+          variable), sin costos fijos.
+        </p>
+      )}
+      {financiero && ve.veCostos && k.sinCostosFijos && (
         <p className="rounded-md bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-800">
           Con filtro de operador, cliente o ruta se ve la contribución (ingreso − costo variable): los costos fijos no son de un
           operador, cliente o ruta.
         </p>
       )}
-      {k.financieros.costosExcluidos > 0 && (
+      {financiero && k.financieros.costosExcluidos > 0 && (
         <p className="rounded-md bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-800">
           {pesos(k.financieros.costosExcluidos, 0)} de costos registrados no entran en la rentabilidad (
           {Object.entries(k.financieros.costosExcluidosPorCategoria)
@@ -120,7 +145,7 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           </Link>
         </p>
       )}
-      {k.financieros.viajesSinTarifa > 0 && (
+      {financiero && k.financieros.viajesSinTarifa > 0 && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
           {k.financieros.viajesSinTarifa} viaje(s) sin tarifa: su ingreso cuenta como cero.
         </p>
@@ -134,18 +159,18 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           ))}
       </ul>
 
-      {k.alertas.length > 0 && (
+      {alertas.length > 0 && (
         <details open className="rounded-xl border border-amber-300 p-4 dark:border-amber-800">
-          <summary className="cursor-pointer font-semibold">Alertas ({k.alertas.length})</summary>
+          <summary className="cursor-pointer font-semibold">Alertas ({alertas.length})</summary>
           <ul className="mt-2 flex flex-col gap-1 text-sm">
-            {k.alertas.map((a, n) => (
+            {alertas.map((a, n) => (
               <li key={n}>{a.viajeId ? <Link href={`/viajes/${a.viajeId}`} className="underline">{a.texto}</Link> : a.texto}</li>
             ))}
           </ul>
         </details>
       )}
 
-      {GRUPOS_INDICADORES.map((g) => (
+      {grupos.map((g) => (
         <details key={g.titulo} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
           <summary className="cursor-pointer font-semibold">{g.titulo}</summary>
           <div className="mt-3 overflow-x-auto">
@@ -160,7 +185,7 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
                 </tr>
               </thead>
               <tbody>
-                {g.indicadores.filter(visible).map((i) => (
+                {g.indicadores.map((i) => (
                   <tr key={i.nombre} className="border-t border-zinc-100 dark:border-zinc-800">
                     <td className="py-1 pr-3">{i.nombre}</td>
                     <td className="py-1 pr-3 text-right font-medium">{fmt(i.valor(k), i.formato)}</td>
@@ -183,11 +208,12 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
         </details>
       ))}
 
-      <Ranking titulo="Unidades: de más a menos rentable" grupos={k.porUnidad} />
-      <Ranking titulo="Clientes: de más a menos rentable" grupos={k.porCliente} />
-      <Ranking titulo="Rutas: de más a menos rentable" grupos={k.porRuta} />
-      <Ranking titulo="Operadores: por km/l contra lo esperado" grupos={k.porOperador} />
+      <Ranking titulo={financiero ? "Unidades: de más a menos rentable" : "Unidades"} grupos={k.porUnidad} financiero={financiero} />
+      <Ranking titulo={financiero ? "Clientes: de más a menos rentable" : "Clientes"} grupos={k.porCliente} financiero={financiero} />
+      <Ranking titulo={financiero ? "Rutas: de más a menos rentable" : "Rutas"} grupos={k.porRuta} financiero={financiero} />
+      <Ranking titulo="Operadores: por km/l contra lo esperado" grupos={k.porOperador} financiero={financiero} />
 
+      {financiero && (
       <Tabla
         titulo="Tarifa de equilibrio por ruta"
         nota="Tarifa mínima por tonelada para no perder = (km cargado + km vacío promedio de la ruta) × costo total/km ÷ toneladas promedio."
@@ -204,19 +230,21 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           pesos(r.ureaPorKm),
         ])}
       />
+      )}
       <Tabla
-        titulo="Clientes: tiempos y concentración del ingreso"
+        titulo={financiero ? "Clientes: tiempos y concentración del ingreso" : "Clientes: tiempos en carga y descarga"}
         nota={`Horas en carga y descarga; se señalan los viajes que pasan de ${entrada.parametros.horasLimiteEstadia} h (base para cobrar estadías).`}
-        encabezados={["Cliente", "Viajes", "Horas en carga", "Horas en descarga", "Sobre el límite", "% del ingreso"]}
+        encabezados={["Cliente", "Viajes", "Horas en carga", "Horas en descarga", "Sobre el límite", ...(financiero ? ["% del ingreso"] : [])]}
         filas={k.tiemposPorCliente.map((t) => [
           t.cliente,
           numero(t.viajes),
           numero(t.horasCargaPromedio, 1),
           numero(t.horasDescargaPromedio, 1),
           <span key="lim" className={t.viajesSobreLimite ? "font-medium text-amber-700 dark:text-amber-400" : ""}>{numero(t.viajesSobreLimite)}</span>,
-          porcentaje(k.concentracion.find((c) => c.cliente === t.cliente)?.pct ?? null),
+          ...(financiero ? [porcentaje(k.concentracion.find((c) => c.cliente === t.cliente)?.pct ?? null)] : []),
         ])}
       />
+      {financiero && (
       <Tabla
         titulo="Viajes del periodo (de menor a mayor utilidad)"
         encabezados={["Folio", "Ingreso", "Utilidad", "Costo del km vacío", "Merma $"]}
@@ -228,10 +256,15 @@ export async function Indicadores({ empresaId, parametros }: { empresaId: string
           pesos(v.mermaPesos, 0),
         ])}
       />
+      )}
       <Tabla
         titulo="Tendencia mes a mes"
-        encabezados={["Mes", "Viajes", "Costo total/km", "Costo variable/km", "Utilidad", "Km/l"]}
-        filas={tend.map((t) => [t.mes, numero(t.viajes), pesos(t.costoTotalPorKm), pesos(t.costoVariablePorKm), pesos(t.utilidad, 0), numero(t.kmPorLitro, 2)])}
+        encabezados={financiero ? ["Mes", "Viajes", "Costo total/km", "Costo variable/km", "Utilidad", "Km/l"] : ["Mes", "Viajes", "Km/l"]}
+        filas={tend.map((t) =>
+          financiero
+            ? [t.mes, numero(t.viajes), pesos(t.costoTotalPorKm), pesos(t.costoVariablePorKm), pesos(t.utilidad, 0), numero(t.kmPorLitro, 2)]
+            : [t.mes, numero(t.viajes), numero(t.kmPorLitro, 2)],
+        )}
       />
     </section>
   );
@@ -277,14 +310,15 @@ function Desglose({ titulo, datos }: { titulo: string; datos: Record<string, num
   );
 }
 
-function Ranking({ titulo, grupos }: { titulo: string; grupos: FilaGrupo[] }) {
+function Ranking({ titulo, grupos, financiero }: { titulo: string; grupos: FilaGrupo[]; financiero: boolean }) {
+  const columnas = columnasRanking(financiero);
   return (
     <Tabla
       titulo={titulo}
-      encabezados={["", ...COLUMNAS_RANKING.map((c) => c.nombre)]}
+      encabezados={["", ...columnas.map((c) => c.nombre)]}
       filas={grupos.map((g) => [
         g.nombre,
-        ...COLUMNAS_RANKING.map((c) => {
+        ...columnas.map((c) => {
           const v = c.valor(g);
           const negativo = (c.nombre === "Utilidad" || c.nombre === "Km/l vs esperado") && (v ?? 0) < 0;
           return (

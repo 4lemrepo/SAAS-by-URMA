@@ -6,7 +6,7 @@ import { usuarioConPermiso } from "@/lib/auth/sesion";
 import { leerReferencias, leerRegistro } from "@/lib/catalogos/datos";
 import { SeccionArmado } from "../../../armados/seccion";
 import { SeccionPagoOperador } from "../../../parametros/pago-operador";
-import { CATALOGOS, esClaveCatalogo, type ClaveCatalogo } from "@/lib/catalogos/definiciones";
+import { CATALOGOS, esClaveCatalogo, type ClaveCatalogo, puedeVerCatalogo } from "@/lib/catalogos/definiciones";
 import { valorDeFormulario } from "@/lib/catalogos/formato";
 import { FormularioCatalogo } from "../../formulario";
 
@@ -27,6 +27,7 @@ async function Editar({ params }: { params: PageProps<"/catalogos/[catalogo]/[id
   const clave: ClaveCatalogo = catalogo;
   const def = CATALOGOS[clave];
   const { empresa } = await usuarioConPermiso("editarCatalogos");
+  if (!puedeVerCatalogo(empresa, clave)) notFound();
   const [registro, referencias] = await Promise.all([
     leerRegistro(clave, empresa.empresaId, id),
     leerReferencias(def, empresa.empresaId),
@@ -49,7 +50,7 @@ async function Editar({ params }: { params: PageProps<"/catalogos/[catalogo]/[id
       </div>
       <FormularioCatalogo clave={clave} id={registro.id} iniciales={iniciales} referencias={referencias} />
       {clave === "unidades" && <SeccionArmado unidadId={registro.id} empresaId={empresa.empresaId} />}
-      {clave === "operadores" && empresa.veTarifas && <SeccionPagoOperador operadorId={registro.id} empresaId={empresa.empresaId} />}
+      {clave === "operadores" && empresa.veUtilidades && <SeccionPagoOperador operadorId={registro.id} empresaId={empresa.empresaId} />}
     </>
   );
 }

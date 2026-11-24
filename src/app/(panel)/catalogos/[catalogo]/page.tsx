@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { puede } from "@/lib/auth/permisos";
 import { usuarioConPermiso } from "@/lib/auth/sesion";
 import { leerCatalogo, leerReferencias } from "@/lib/catalogos/datos";
-import { CATALOGOS, CLAVES_CATALOGO, esClaveCatalogo } from "@/lib/catalogos/definiciones";
+import { CATALOGOS, CLAVES_CATALOGO, esClaveCatalogo, puedeVerCatalogo } from "@/lib/catalogos/definiciones";
 import { CATALOGOS_IMPORTABLES } from "@/lib/importacion/plantilla";
 import { ListaCatalogo } from "../lista";
 
@@ -40,6 +40,7 @@ export default async function PaginaCatalogo({ params }: PageProps<"/catalogos/[
 
 async function Contenido({ clave }: { clave: keyof typeof CATALOGOS }) {
   const { empresa } = await usuarioConPermiso(CATALOGOS[clave].soloAdmin ? "editarCatalogos" : "verCatalogos");
+  if (!puedeVerCatalogo(empresa, clave)) redirect("/tablero");
   const [filas, referencias] = await Promise.all([
     leerCatalogo(clave, empresa.empresaId),
     leerReferencias(CATALOGOS[clave], empresa.empresaId),
