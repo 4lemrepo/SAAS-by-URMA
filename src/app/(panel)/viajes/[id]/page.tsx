@@ -370,7 +370,22 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   litros: "Litros",
   remisiones: "Remisiones del cliente",
   factura_cliente: "Factura al cliente",
+  fecha: "Fecha",
+  categoria_id: "Categoría",
+  fuente_id: "Dónde se cargó",
+  forma_pago: "Forma de pago",
+  proveedor: "Proveedor",
+  numero_comprobante: "No. de comprobante",
+  comprobante_path: "Comprobante",
+  foto_ticket_path: "Foto del ticket",
+  precio_litro: "Precio por litro",
+  importe: "Importe del ticket",
+  odometro: "Odómetro",
+  folio_ticket: "Folio del ticket",
+  notas: "Notas",
 };
+/** Campos que guardan un archivo: en la bitácora basta con decir que cambió. */
+const CAMPOS_ARCHIVO = new Set(["comprobante_path", "foto_ticket_path"]);
 const NOMBRE_TABLA: Record<string, string> = {
   viajes: "Viaje",
   tramos_viaje: "Tramo",
@@ -383,10 +398,19 @@ const NOMBRE_TABLA: Record<string, string> = {
 
 async function Bitacora({ viajeId, empresaId, esDueno }: { viajeId: string; empresaId: string; esDueno: boolean }) {
   const db = await crearClienteServidor();
-  const [{ data }, usuarios] = await Promise.all([
+  const [{ data }, usuarios, categorias, fuentes] = await Promise.all([
     db.from("bitacora").select("id, tabla, accion, campo, valor_anterior, valor_nuevo, nota, usuario_id, en").eq("viaje_id", viajeId).order("en", { ascending: false }).limit(300),
     esDueno ? db.rpc("usuarios_de_empresa", { p_empresa: empresaId }) : Promise.resolve({ data: [] }),
+    db.from("categorias_gasto").select("id, nombre").eq("empresa_id", empresaId),
+    db.from("fuentes_diesel").select("id, nombre").eq("empresa_id", empresaId),
   ]);
+  // Categoría y fuente se guardan por id: en la bitácora se ve el nombre.
+  const nombres = new Map([...(categorias.data ?? []), ...(fuentes.data ?? [])].map((x) => [x.id as string, x.nombre as string]));
+  const valor = (campo: string | null, v: string | null) => {
+    if (v === null) return "—";
+    if (campo && CAMPOS_ARCHIVO.has(campo)) return "archivo";
+    return nombres.get(v) ?? v;
+  };
   const correo = new Map(((usuarios.data ?? []) as { usuario_id: string; correo: string }[]).map((u) => [u.usuario_id, u.correo]));
   const quien = (id: string | null) => (id ? (correo.get(id) ?? `usuario …${id.slice(-6)}`) : "sistema");
   return (
@@ -405,7 +429,7 @@ async function Bitacora({ viajeId, empresaId, esDueno }: { viajeId: string; empr
                   ? `reabrió el viaje${b.nota ? `: «${b.nota}»` : ""}`
                   : b.accion === "cancelacion"
                     ? `canceló el viaje${b.nota ? `: «${b.nota}»` : ""}`
-                  : `${ETIQUETA_CAMPO[b.campo ?? ""] ?? b.campo}: ${b.valor_anterior ?? "—"} → ${b.valor_nuevo ?? "—"}`}
+                  : `${ETIQUETA_CAMPO[b.campo ?? ""] ?? b.campo}: ${valor(b.campo, b.valor_anterior)} → ${valor(b.campo, b.valor_nuevo)}`}
           </li>
         ))}
       </ul>

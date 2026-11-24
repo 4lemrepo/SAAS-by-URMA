@@ -6,7 +6,8 @@ import { CamposFactura, EditarFactura, TextoFactura, useFactura } from "@/compon
 import { parsearNumero } from "@/lib/catalogos/validacion";
 import { BASES_FLETE, CAMPOS_ESQUEMA, ESQUEMAS_PAGO, ETIQUETA_COLUMNA_PAGO } from "@/lib/viajes/pago";
 import type { EsquemaPago } from "@/lib/viajes/calculos";
-import { ahoraLocal, formatearFecha, formatearFechaHora, hoy } from "@/lib/viajes/fechas";
+import { ahoraLocal, formatearFecha, formatearFechaHora, hoy, isoALocal } from "@/lib/viajes/fechas";
+import { tasaIva } from "@/lib/costos/iva";
 import { FORMAS_PAGO } from "@/lib/viajes/movimientos";
 import { numero, pesos } from "@/lib/formato";
 import { crearClienteNavegador } from "@/lib/supabase/client";
@@ -18,6 +19,8 @@ import {
   cancelarGasto,
   cancelarViaje,
   cerrarViaje,
+  editarCarga,
+  editarGasto,
   guardarCarga,
   guardarCargoAdicional,
   guardarFacturaCliente,
@@ -51,6 +54,7 @@ export function SubirArchivo({
   etiqueta,
   acepta,
   error,
+  inicial,
 }: {
   bucket: "tickets" | "comprobantes";
   empresaId: string;
@@ -58,9 +62,11 @@ export function SubirArchivo({
   etiqueta: string;
   acepta: string;
   error?: string;
+  /** Al corregir: el archivo que ya tiene (se conserva si no se sube otro). */
+  inicial?: string;
 }) {
-  const [ruta, setRuta] = useState("");
-  const [estado, setEstado] = useState<string | null>(null);
+  const [ruta, setRuta] = useState(inicial ?? "");
+  const [estado, setEstado] = useState<string | null>(inicial ? "Ya tiene archivo; sube otro solo para reemplazarlo." : null);
 
   async function subir(archivo: File) {
     setEstado("Subiendo…");
@@ -68,7 +74,7 @@ export function SubirArchivo({
     const destino = `${empresaId}/${crypto.randomUUID()}.${ext}`;
     const { error: e } = await crearClienteNavegador().storage.from(bucket).upload(destino, archivo, { contentType: archivo.type });
     if (e) {
-      setRuta("");
+      setRuta(inicial ?? "");
       setEstado("No se pudo subir (máximo 5 MB en fotos de ticket, 10 MB en comprobantes).");
       return;
     }
@@ -142,7 +148,7 @@ export function SeccionCargas({
         <ul className="flex flex-col gap-2">
           {cargas.map((c) => (
             <li key={c.id} className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="font-medium">
                   {numero(c.litros, 2)} L · {c.fuente}{" "}
                   <span className={`ml-1 rounded px-1.5 py-0.5 text-xs ${ESTADO_CARGA[c.estado]}`}>
@@ -173,7 +179,10 @@ export function SeccionCargas({
                   )}
                 </p>
                 {abierto && editables.includes(c.id) && (
-                  <EditarFactura tieneFactura={c.tiene_factura} tasa={c.tasa_iva} guardar={(t, x) => cambiarFacturaCarga(c.id, t, x)} />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <EditarFactura tieneFactura={c.tiene_factura} tasa={c.tasa_iva} guardar={(t, x) => cambiarFacturaCarga(c.id, t, x)} />
+                    <EditarCarga carga={c} empresaId={empresaId} fuentes={fuentes} />
+                  </div>
                 )}
               </div>
               {revisables.includes(c.id) && (
@@ -247,7 +256,7 @@ export function SeccionGastos({
               key={g.id}
               className={`flex flex-wrap items-start justify-between gap-2 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800 ${g.cancelado ? "opacity-50" : ""}`}
             >
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="font-medium">
                   {g.categoria} · {pesos(g.monto)}
                   {g.facturable_anterior && (
@@ -264,6 +273,7 @@ export function SeccionGastos({
                   {g.folio} · {formatearFecha(g.fecha)} · {formaPago(g.forma_pago)}
                   {g.proveedor && ` · ${g.proveedor}`}
                   {g.numero_comprobante && ` · comprobante ${g.numero_comprobante}`}
+                  {g.notas && ` · ${g.notas}`}
                   {comprobantes[g.id] && (
                     <>
                       {" · "}
@@ -273,6 +283,7 @@ export function SeccionGastos({
                     </>
                   )}
                 </p>
+                {abierto && !g.cancelado && <EditarGasto gasto={g} empresaId={empresaId} categorias={categorias} />}
               </div>
               {abierto && (
                 <div className="flex flex-col items-end gap-1">
@@ -499,7 +510,7 @@ function FormularioCarga({
   const [litros, setLitros] = useState(valores.litros ?? "");
   const [precio, setPrecio] = useState(valores.precio_litro ?? "");
   const [importe, setImporte] = useState(valores.importe ?? "");
-  const factura = useFactura({ tieneFactura: valores.tiene_factura === "on" });
+  const factura = useFactura({ tieneFactura: valores.tiene_factura === "on", tasa: tasaIva(valores.tasa_iva) });
   const calculado = leer(litros) !== null && leer(precio) !== null ? Math.round(leer(litros)! * leer(precio)! * 100) / 100 : null;
   const total = leer(importe) ?? calculado;
   return (
@@ -541,7 +552,7 @@ function FormularioCarga({
       />
       <Campo etiqueta="Odómetro" name="odometro" inputMode="decimal" defaultValue={valores.odometro ?? ""} error={errores.odometro} />
       <Campo etiqueta="Folio del ticket" name="folio_ticket" defaultValue={valores.folio_ticket ?? ""} error={errores.folio_ticket} />
-      <SubirArchivo bucket="tickets" empresaId={empresaId} nombre="foto_ticket_path" etiqueta="Foto del ticket o del medidor" acepta="image/*" error={errores.foto_ticket_path} />
+      <SubirArchivo bucket="tickets" empresaId={empresaId} nombre="foto_ticket_path" etiqueta="Foto del ticket o del medidor" acepta="image/*" error={errores.foto_ticket_path} inicial={valores.foto_ticket_path || undefined} />
       <CamposFactura total={total} factura={factura} />
     </div>
   );
@@ -563,7 +574,7 @@ function FormularioGasto({
 }) {
   const [categoria, setCategoria] = useState(valores.categoria_id ?? "");
   const [monto, setMonto] = useState(valores.monto ?? "");
-  const factura = useFactura({ tieneFactura: valores.tiene_factura === "on" });
+  const factura = useFactura({ tieneFactura: valores.tiene_factura === "on", tasa: tasaIva(valores.tasa_iva) });
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <Campo etiqueta="Fecha" name="fecha" type="date" defaultValue={valores.fecha ?? hoy()} required error={errores.fecha} />
@@ -593,7 +604,8 @@ function FormularioGasto({
       <Selector etiqueta="Forma de pago" name="forma_pago" opciones={FORMAS_PAGO} defaultValue={valores.forma_pago ?? "efectivo"} error={errores.forma_pago} />
       <Campo etiqueta="Proveedor" name="proveedor" defaultValue={valores.proveedor ?? ""} error={errores.proveedor} />
       <Campo etiqueta="No. de comprobante o factura" name="numero_comprobante" defaultValue={valores.numero_comprobante ?? ""} error={errores.numero_comprobante} />
-      <SubirArchivo bucket="comprobantes" empresaId={empresaId} nombre="comprobante_path" etiqueta="Comprobante (foto o PDF)" acepta="image/*,application/pdf" error={errores.comprobante_path} />
+      <SubirArchivo bucket="comprobantes" empresaId={empresaId} nombre="comprobante_path" etiqueta="Comprobante (foto o PDF)" acepta="image/*,application/pdf" error={errores.comprobante_path} inicial={valores.comprobante_path || undefined} />
+      <Campo etiqueta="Notas" name="notas" defaultValue={valores.notas ?? ""} maxLength={500} error={errores.notas} />
       {esAdmin && <Campo etiqueta="Folio" name="folio" placeholder="Automático" defaultValue={valores.folio ?? ""} error={errores.folio} />}
       <CamposFactura total={leer(monto)} factura={factura} />
     </div>
@@ -649,5 +661,90 @@ export function SeccionCargosAdicionales({ viajeId, abierto, cargos }: { viajeId
           </button>
         ))}
     </div>
+  );
+}
+
+/** Abre un formulario para corregir algo ya capturado y lo cierra al guardar. */
+function useCorreccion(estado: { exito?: boolean; enviadoEn?: number }) {
+  const [abiertoEn, setAbiertoEn] = useState<number | null>(null);
+  const abierto = abiertoEn !== null && !(estado.exito && (estado.enviadoEn ?? 0) > abiertoEn);
+  return { abierto, abrir: () => setAbiertoEn(Date.now()), cerrar: () => setAbiertoEn(null) };
+}
+
+/** Corregir un gasto de un viaje abierto (queda en la bitácora). */
+function EditarGasto({ gasto, empresaId, categorias }: { gasto: Gasto; empresaId: string; categorias: OpcionConFactura[] }) {
+  const [estado, accion] = useActionState(editarGasto.bind(null, gasto.id), {});
+  const c = useCorreccion(estado);
+  if (!c.abierto) {
+    return (
+      <button type="button" onClick={c.abrir} className="text-sm text-zinc-600 underline dark:text-zinc-400">
+        Corregir
+      </button>
+    );
+  }
+  const iniciales: Record<string, string> = {
+    fecha: gasto.fecha,
+    categoria_id: gasto.categoria_id,
+    monto: String(gasto.monto),
+    tiene_factura: gasto.tiene_factura ? "on" : "",
+    tasa_iva: String(gasto.tasa_iva),
+    forma_pago: gasto.forma_pago,
+    proveedor: gasto.proveedor ?? "",
+    numero_comprobante: gasto.numero_comprobante ?? "",
+    comprobante_path: gasto.comprobante_path ?? "",
+    notas: gasto.notas ?? "",
+  };
+  return (
+    <form action={accion} className="mt-2 flex w-full flex-col gap-3 rounded-md border border-zinc-200 p-3 text-left dark:border-zinc-800">
+      <Aviso texto={estado.mensaje} tipo={estado.exito ? "exito" : "error"} />
+      <FormularioGasto empresaId={empresaId} categorias={categorias} esAdmin={false} valores={estado.valores ?? iniciales} errores={estado.errores ?? {}} />
+      <div className="flex items-center gap-4">
+        <BotonEnviar pendiente="Guardando…">Guardar corrección</BotonEnviar>
+        <button type="button" onClick={c.cerrar} className="mt-2 text-sm underline">
+          Cerrar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Corregir una carga de un viaje abierto: litros, precio, importe al total del ticket… (queda en la bitácora). */
+function EditarCarga({ carga, empresaId, fuentes }: { carga: Carga; empresaId: string; fuentes: OpcionConFactura[] }) {
+  const [estado, accion] = useActionState(editarCarga.bind(null, carga.id), {});
+  const c = useCorreccion(estado);
+  if (!c.abierto) {
+    return (
+      <button type="button" onClick={c.abrir} className="text-sm text-zinc-600 underline dark:text-zinc-400">
+        Corregir
+      </button>
+    );
+  }
+  const s = (x: unknown) => (x === null || x === undefined ? "" : String(x));
+  const iniciales: Record<string, string> = {
+    fecha: isoALocal(carga.fecha),
+    fuente_id: carga.fuente_id,
+    litros: s(carga.litros),
+    precio_litro: s(carga.precio_litro),
+    importe: s(carga.importe),
+    tiene_factura: carga.tiene_factura ? "on" : "",
+    tasa_iva: String(carga.tasa_iva),
+    odometro: s(carga.odometro),
+    folio_ticket: s(carga.folio_ticket),
+    foto_ticket_path: s(carga.foto_ticket_path),
+  };
+  return (
+    <form action={accion} className="mt-2 flex w-full flex-col gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <Aviso texto={estado.mensaje} tipo={estado.exito ? "exito" : "error"} />
+      {carga.estado !== "pendiente" && (
+        <p className="text-sm text-zinc-500">La carga sigue {carga.estado}; el cambio queda en la bitácora.</p>
+      )}
+      <FormularioCarga empresaId={empresaId} fuentes={fuentes} valores={estado.valores ?? iniciales} errores={estado.errores ?? {}} />
+      <div className="flex items-center gap-4">
+        <BotonEnviar pendiente="Guardando…">Guardar corrección</BotonEnviar>
+        <button type="button" onClick={c.cerrar} className="mt-2 text-sm underline">
+          Cerrar
+        </button>
+      </div>
+    </form>
   );
 }

@@ -238,6 +238,26 @@ export async function guardarGasto(viajeId: string, _: EstadoFormulario, form: F
   return { exito: true, mensaje: "Gasto agregado.", enviadoEn: Date.now() };
 }
 
+/**
+ * Corregir un gasto mientras su viaje está abierto: fecha, categoría, total,
+ * factura e IVA, forma de pago, proveedor, comprobante y notas. El folio no
+ * cambia. La base impide corregir si el viaje está cerrado o cancelado y deja
+ * cada cambio en la bitácora.
+ */
+export async function editarGasto(id: string, _: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
+  const v = valores(form);
+  if (!PATRON_UUID.test(id)) return { mensaje: "Gasto no válido" };
+  const sesion = await sesionQueCaptura();
+  if (!sesion) return { mensaje: "Tu rol no captura gastos", valores: v };
+  const r = validarGasto(v, sesion.empresa.empresaId);
+  if (!r.ok) return { errores: r.errores, valores: v };
+  const { data, error } = await sesion.supabase.from("gastos_viaje").update(r.datos).eq("id", id).select("id");
+  if (error) return { mensaje: mensajeDeError(error, "No se pudo corregir el gasto"), valores: v };
+  if (!data?.length) return { mensaje: "No puedes corregir este gasto", valores: v };
+  refresh();
+  return { exito: true, mensaje: "Gasto corregido.", enviadoEn: Date.now() };
+}
+
 /** Nada se borra: un gasto equivocado se cancela y queda en la bitácora. */
 export async function cancelarGasto(id: string, cancelado: boolean): Promise<string | null> {
   const sesion = await sesionQueCaptura();
@@ -314,6 +334,26 @@ export async function guardarCarga(viajeId: string, _: EstadoFormulario, form: F
   if (error) return { mensaje: mensajeDeError(error, "No se pudo guardar la carga"), valores: v };
   refresh();
   return { exito: true, mensaje: "Carga agregada. Queda pendiente hasta que se valide.", enviadoEn: Date.now() };
+}
+
+/**
+ * Corregir una carga mientras su viaje está abierto: litros, precio, importe
+ * al total del ticket, factura, fuente, fecha, odómetro, folio y foto.
+ * Administración corrige cualquiera; captura, las suyas pendientes (RLS). Una
+ * carga validada sigue validada; cada cambio queda en la bitácora.
+ */
+export async function editarCarga(id: string, _: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
+  const v = valores(form);
+  if (!PATRON_UUID.test(id)) return { mensaje: "Carga no válida" };
+  const sesion = await sesionQueCaptura();
+  if (!sesion) return { mensaje: "Tu rol no captura cargas", valores: v };
+  const r = validarCarga({ ...v, fecha: localAIso(v.fecha) }, sesion.empresa.empresaId);
+  if (!r.ok) return { errores: r.errores, valores: v };
+  const { data, error } = await sesion.supabase.from("cargas_diesel").update(r.datos).eq("id", id).select("id");
+  if (error) return { mensaje: mensajeDeError(error, "No se pudo corregir la carga"), valores: v };
+  if (!data?.length) return { mensaje: "No puedes corregir esta carga", valores: v };
+  refresh();
+  return { exito: true, mensaje: "Carga corregida.", enviadoEn: Date.now() };
 }
 
 /** "¿Tiene factura?" de una carga ya capturada: recalcula el IVA de su importe. */

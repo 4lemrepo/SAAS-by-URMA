@@ -1054,3 +1054,52 @@ begin
   update viajes set factura_cliente = 'F-100' where id = (select v from ctx where k='viajeCerrado'); get diagnostics n = row_count;
   raise notice '101f otro viaje con la misma factura (esperado 1): %', n;
 end $$;
+
+-- ---------- Editar gastos y cargas; movimientos de tanque sin borrar (migración 20261124000100) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  f uuid := (select v from ctx where k='fA'); u uuid; vj uuid; g uuid; c uuid; cat uuid;
+  cap uuid := '00000000-0000-0000-0000-0000000000a2';
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  select id into cat from categorias_gasto where empresa_id = e and nombre = 'Casetas';
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, fecha_llegada) values (e, u, o, now(), now()) returning id into vj;
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final) values
+    (e, vj, 'vacio', 'AA', 'BB', 1000, 1100), (e, vj, 'cargado', 'BB', 'CC', 1100, 1500);
+
+  -- 110. Captura corrige un gasto de un viaje abierto: fecha, monto e IVA; queda en la bitácora
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto) values (e, vj, cat, 500) returning id into g;
+  update gastos_viaje set fecha = '2026-11-01', monto = 580, tiene_factura = true, iva = 80, proveedor = 'Caseta Fresnillo' where id = g;
+  get diagnostics n = row_count; raise notice '110 gasto corregido por captura (esperado 1): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select count(*) into n from bitacora where registro_id = g and accion = 'cambio' and campo in ('fecha', 'monto', 'tiene_factura', 'iva', 'proveedor');
+  raise notice '110b cambios del gasto en la bitácora (esperado 5): %', n;
+
+  -- 111. El dueño corrige litros, precio e importe de una carga validada; queda en la bitácora
+  insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros, precio_litro, importe)
+    values (e, vj, u, o, f, 1299.44, 27.01, 35097.87) returning id into c;
+  update cargas_diesel set estado = 'validada' where id = c;
+  update cargas_diesel set precio_litro = 27.0116, importe = 35100 where id = c;
+  select estado::text || ' ' || importe::text into t from cargas_diesel where id = c;
+  raise notice '111 carga corregida sigue validada: %', case when t = 'validada 35100.00' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from bitacora where registro_id = c and accion = 'cambio' and campo in ('precio_litro', 'importe');
+  raise notice '111b cambios de la carga en la bitácora (esperado 2): %', n;
+
+  -- 112. Cerrado: ya no se corrigen
+  update viajes set estado = 'cerrado' where id = vj;
+  begin update gastos_viaje set monto = 1 where id = g; raise notice '112 FALLA: se corrigió un gasto de un viaje cerrado';
+  exception when raise_exception then raise notice '112 OK: gasto de viaje cerrado no se corrige'; end;
+  begin update cargas_diesel set litros = 1 where id = c; raise notice '112b FALLA: se corrigió una carga de un viaje cerrado';
+  exception when raise_exception then raise notice '112b OK: carga de viaje cerrado no se corrige'; end;
+
+  -- 113. Movimientos de tanque: dueño y administración dan de alta y corrigen, nadie borra
+  insert into movimientos_tanque (empresa_id, fuente_id, tipo, litros) values (e, f, 'entrada_pipa', 5000) returning id into g;
+  update movimientos_tanque set litros = 4900 where id = g; get diagnostics n = row_count;
+  raise notice '113 movimientos corregidos por el dueño (esperado 1): %', n;
+  delete from movimientos_tanque where empresa_id = e; get diagnostics n = row_count;
+  raise notice '113b movimientos que el dueño borró (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  select count(*) into n from movimientos_tanque; raise notice '113c movimientos que ve captura (esperado 0): %', n;
+end $$;
