@@ -17,6 +17,13 @@ import { Cierre, FormularioFinanzas, SeccionCargas, SeccionCargosAdicionales, Se
 
 export const metadata: Metadata = { title: "Viaje · Control Diésel" };
 
+const NOMBRE_ESTADO = { abierto: "Abierto", cerrado: "Cerrado", cancelado: "Cancelado" } as const;
+const COLOR_ESTADO = {
+  abierto: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  cerrado: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
+  cancelado: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+} as const;
+
 export default function PaginaViaje({ params }: PageProps<"/viajes/[id]">) {
   return (
     <Suspense fallback={<p className="text-zinc-500">Cargando…</p>}>
@@ -63,10 +70,8 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
           </Link>
           <h1 className="mt-1 text-2xl font-semibold">
             Viaje {viaje.folio}{" "}
-            <span
-              className={`ml-1 rounded px-2 py-0.5 align-middle text-sm font-medium ${abierto ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" : "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"}`}
-            >
-              {abierto ? "Abierto" : "Cerrado"}
+            <span className={`ml-1 rounded px-2 py-0.5 align-middle text-sm font-medium ${COLOR_ESTADO[viaje.estado]}`}>
+              {NOMBRE_ESTADO[viaje.estado]}
             </span>
           </h1>
           <p className="text-sm text-zinc-500">
@@ -76,6 +81,13 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
           </p>
         </div>
       </div>
+
+      {viaje.estado === "cancelado" && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-300">
+          Cancelado el {formatearFechaHora(viaje.cancelado_en)}: «{viaje.motivo_cancelacion}». No cuenta en el tablero ni en las
+          alertas y ya no se puede editar.
+        </p>
+      )}
 
       <Datos viaje={viaje} tolerancia={Number(tolerancia.data ?? 10)} />
 
@@ -375,6 +387,8 @@ async function Bitacora({ viajeId, empresaId, esDueno }: { viajeId: string; empr
                 ? "cerró el viaje"
                 : b.accion === "reapertura"
                   ? `reabrió el viaje${b.nota ? `: «${b.nota}»` : ""}`
+                  : b.accion === "cancelacion"
+                    ? `canceló el viaje${b.nota ? `: «${b.nota}»` : ""}`
                   : `${ETIQUETA_CAMPO[b.campo ?? ""] ?? b.campo}: ${b.valor_anterior ?? "—"} → ${b.valor_nuevo ?? "—"}`}
           </li>
         ))}

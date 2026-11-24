@@ -48,18 +48,18 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
     unidad: UUID.test(uno("unidad")) ? uno("unidad") : undefined,
     operador: UUID.test(uno("operador")) ? uno("operador") : undefined,
     cliente: UUID.test(uno("cliente")) ? uno("cliente") : undefined,
-    estado: uno("estado") === "abierto" || uno("estado") === "cerrado" ? (uno("estado") as "abierto" | "cerrado") : undefined,
+    estado: ["abierto", "cerrado", "cancelado", "todos"].includes(uno("estado")) ? (uno("estado") as FiltrosViajes["estado"]) : undefined,
   };
   const db = await crearClienteServidor();
   const [viajes, nombres] = await Promise.all([
     leerViajes(empresa.empresaId, filtros, { veTarifas: empresa.veTarifas, esAdmin: puede(empresa.rol, "editarCatalogos") }, db),
     leerNombres(db, empresa.empresaId),
   ]);
-  const selector = (nombre: string, etiqueta: string, opciones: { id: string; texto: string }[], valor?: string) => (
+  const selector = (nombre: string, etiqueta: string, opciones: { id: string; texto: string }[], valor?: string, todos = "Todos") => (
     <label className="flex flex-col gap-1 text-sm">
       <span className="font-medium">{etiqueta}</span>
       <select name={nombre} defaultValue={valor ?? ""} className="rounded-md border border-zinc-300 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-950">
-        <option value="">Todos</option>
+        <option value="">{todos}</option>
         {opciones.map((o) => (
           <option key={o.id} value={o.id}>
             {o.texto}
@@ -82,7 +82,18 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
         {selector("unidad", "Unidad", nombres.listas.unidades.map((u) => ({ id: u.id, texto: u.numero_economico })), filtros.unidad)}
         {selector("operador", "Operador", nombres.listas.operadores.map((o) => ({ id: o.id, texto: o.nombre })), filtros.operador)}
         {selector("cliente", "Cliente", nombres.listas.clientes.map((c) => ({ id: c.id, texto: c.nombre })), filtros.cliente)}
-        {selector("estado", "Estado", [{ id: "abierto", texto: "Abiertos" }, { id: "cerrado", texto: "Cerrados" }], filtros.estado)}
+        {selector(
+          "estado",
+          "Estado",
+          [
+            { id: "abierto", texto: "Abiertos" },
+            { id: "cerrado", texto: "Cerrados" },
+            { id: "cancelado", texto: "Cancelados" },
+            { id: "todos", texto: "Todos, con cancelados" },
+          ],
+          filtros.estado,
+          "Abiertos y cerrados",
+        )}
         <button type="submit" className="rounded-md border border-zinc-300 px-4 py-2 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
           Filtrar
         </button>

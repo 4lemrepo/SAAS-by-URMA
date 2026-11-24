@@ -5,7 +5,7 @@
  *
  * Reglas:
  * - Un viaje cuenta en el mes de su salida (hora del centro). Por defecto solo
- *   los cerrados.
+ *   los cerrados. Los cancelados nunca cuentan (ni en alertas).
  * - Utilidad del viaje (contribución) = ingreso − costo variable
  *   (diésel + gastos del viaje + pago al operador).
  * - Los costos son el costo real: sin el IVA acreditable de lo que tiene
@@ -26,7 +26,7 @@ import { asignarCostos, type ArmadoHistorico, type Costo, type MetodoProrrateo }
 export interface ViajeKpi {
   id: string;
   folio: string;
-  estado: "abierto" | "cerrado";
+  estado: "abierto" | "cerrado" | "cancelado";
   fechaSalida: string;
   fechaLlegada: string | null;
   llegadaCarga: string | null;
@@ -358,7 +358,8 @@ export interface Kpis {
   alertas: Alerta[];
 }
 
-export function calcularKpis(e: EntradaKpis, meses: readonly string[], f: Filtros = {}): Kpis {
+export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: Filtros = {}): Kpis {
+  const e = { ...entrada, viajes: entrada.viajes.filter((v) => v.estado !== "cancelado") };
   const enPeriodo = new Set(meses);
   const dias = meses.reduce((s, m) => s + diasDelMes(m), 0);
   const delPeriodo = e.viajes.filter(

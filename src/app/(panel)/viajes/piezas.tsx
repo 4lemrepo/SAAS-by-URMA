@@ -16,6 +16,7 @@ import {
   cambiarFacturaGasto,
   cancelarCargoAdicional,
   cancelarGasto,
+  cancelarViaje,
   cerrarViaje,
   guardarCarga,
   guardarCargoAdicional,
@@ -384,8 +385,9 @@ export function Cierre({
   bloqueos,
 }: {
   viajeId: string;
-  estado: "abierto" | "cerrado";
+  estado: "abierto" | "cerrado" | "cancelado";
   puedeCerrar: boolean;
+  /** Dueño o "puede reabrir viajes": también cancela. */
   puedeReabrir: boolean;
   /** Qué falta para poder cerrar (se muestra; la base lo vuelve a revisar). */
   bloqueos: string[];
@@ -393,27 +395,53 @@ export function Cierre({
   const [pendiente, iniciar] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [estado, accion] = useActionState(reabrirViaje.bind(null, viajeId), {});
+  const [estadoCancelar, accionCancelar] = useActionState(cancelarViaje.bind(null, viajeId), {});
+  const [cancelando, setCancelando] = useState(false);
 
+  if (estadoViaje === "cancelado") return null;
   if (estadoViaje === "abierto") {
-    if (!puedeCerrar) return null;
     return (
-      <div className="flex flex-col gap-2">
-        {bloqueos.length > 0 && (
-          <ul className="list-disc pl-5 text-sm text-amber-700 dark:text-amber-400">
-            {bloqueos.map((b) => (
-              <li key={b}>{b}</li>
-            ))}
-          </ul>
+      <div className="flex flex-col gap-4">
+        {puedeCerrar && (
+          <div className="flex flex-col gap-2">
+            {bloqueos.length > 0 && (
+              <ul className="list-disc pl-5 text-sm text-amber-700 dark:text-amber-400">
+                {bloqueos.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              disabled={pendiente || bloqueos.length > 0}
+              onClick={() => iniciar(async () => setError(await cerrarViaje(viajeId)))}
+              className="self-start rounded-md bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              {pendiente ? "Cerrando…" : "Cerrar viaje"}
+            </button>
+            <Mensaje texto={error} />
+          </div>
         )}
-        <button
-          type="button"
-          disabled={pendiente || bloqueos.length > 0}
-          onClick={() => iniciar(async () => setError(await cerrarViaje(viajeId)))}
-          className="self-start rounded-md bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          {pendiente ? "Cerrando…" : "Cerrar viaje"}
-        </button>
-        <Mensaje texto={error} />
+        {puedeReabrir &&
+          (cancelando ? (
+            <form action={accionCancelar} className="flex max-w-xl flex-col gap-2 rounded-md border border-red-200 p-3 dark:border-red-900">
+              <Aviso texto={estadoCancelar.mensaje} tipo={estadoCancelar.exito ? "exito" : "error"} />
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                El viaje no se borra: queda en la bitácora con el motivo, sale del tablero y de las alertas, y ya no se puede editar.
+              </p>
+              <Campo etiqueta="Motivo de la cancelación" name="motivo" required minLength={5} error={estadoCancelar.errores?.motivo} />
+              <div className="flex items-center gap-4">
+                <BotonEnviar pendiente="Cancelando…">Cancelar viaje</BotonEnviar>
+                <button type="button" onClick={() => setCancelando(false)} className="mt-2 text-sm underline">
+                  No cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button type="button" onClick={() => setCancelando(true)} className="self-start text-sm text-red-700 underline dark:text-red-400">
+              Cancelar viaje…
+            </button>
+          ))}
       </div>
     );
   }

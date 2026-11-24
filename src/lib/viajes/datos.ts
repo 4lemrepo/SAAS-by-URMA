@@ -84,10 +84,12 @@ export interface Finanzas {
   pago_monto_fijo: number | null;
   pago_operador_manual: number | null;
 }
+export type EstadoViaje = "abierto" | "cerrado" | "cancelado";
+
 export interface Viaje {
   id: string;
   folio: string;
-  estado: "abierto" | "cerrado";
+  estado: EstadoViaje;
   unidad_id: string;
   operador_id: string;
   cliente_id: string | null;
@@ -106,6 +108,8 @@ export interface Viaje {
   explicacion_km_sin_viaje: string | null;
   notas: string | null;
   cerrado_en: string | null;
+  cancelado_en: string | null;
+  motivo_cancelacion: string | null;
   creado_en: string;
 }
 export interface ViajeCompleto extends Viaje {
@@ -131,12 +135,13 @@ export interface FiltrosViajes {
   unidad?: string;
   operador?: string;
   cliente?: string;
-  estado?: "abierto" | "cerrado";
+  /** Sin estado: abiertos y cerrados (los cancelados solo si se piden, o por id). */
+  estado?: EstadoViaje | "todos";
   ids?: string[];
 }
 
 const COLUMNAS_VIAJE =
-  "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, creado_en";
+  "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, cancelado_en, motivo_cancelacion, creado_en";
 
 /**
  * Consulta por lotes de ids: una URL con cientos de ids no cabe en una
@@ -188,7 +193,9 @@ export async function leerViajes(
     if (filtros.unidad) q = q.eq("unidad_id", filtros.unidad);
     if (filtros.operador) q = q.eq("operador_id", filtros.operador);
     if (filtros.cliente) q = q.eq("cliente_id", filtros.cliente);
-    if (filtros.estado) q = q.eq("estado", filtros.estado);
+    if (filtros.estado && filtros.estado !== "todos") q = q.eq("estado", filtros.estado);
+    // Un viaje cancelado sale de listas y KPIs; se ve con su filtro o abriéndolo.
+    else if (!filtros.estado && !filtros.ids) q = q.neq("estado", "cancelado");
     if (filtros.ids) q = q.in("id", filtros.ids);
     return q.order("fecha_salida", { ascending: false }).order("id");
   };
@@ -342,7 +349,8 @@ export async function ultimoPuntoDeUnidad(
   unidadId: string,
   opciones: { antesDe?: string; excluir?: string } = {},
 ): Promise<{ lugar: string | null; odometro: number | null; operadorId: string | null }> {
-  let q = db.from("viajes").select("id, operador_id").eq("unidad_id", unidadId);
+  // Un viaje cancelado no mueve el último punto de la unidad.
+  let q = db.from("viajes").select("id, operador_id").eq("unidad_id", unidadId).neq("estado", "cancelado");
   if (opciones.antesDe) q = q.lt("fecha_salida", opciones.antesDe);
   if (opciones.excluir) q = q.neq("id", opciones.excluir);
   const { data } = await q.order("fecha_salida", { ascending: false }).limit(1).maybeSingle();
@@ -384,6 +392,7 @@ export async function ultimosPuntos(db: ClienteSupabase, empresaId: string) {
     .from("viajes")
     .select("id, unidad_id, operador_id")
     .eq("empresa_id", empresaId)
+    .neq("estado", "cancelado")
     .order("fecha_salida", { ascending: false })
     .limit(1000);
   const ultimoPorUnidad = new Map<string, { id: string; operador_id: string }>();

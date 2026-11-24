@@ -849,3 +849,66 @@ begin
   select count(*) into n from categorias_gasto where empresa_id = eb and nombre = 'Propinas' and not tiene_factura;
   raise notice '74b empresa nueva con Propinas sin factura (esperado 1): %', n;
 end $$;
+
+-- ---------- Cancelar viaje (migraciones 20261123000100 y 20261123000200) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  f uuid := (select v from ctx where k='fA'); u uuid; vj uuid; cat uuid; carga uuid;
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida) values (e, u, o, now()) returning id into vj;
+  select id into cat from categorias_gasto where empresa_id = e and nombre = 'Casetas';
+  insert into cargas_diesel (empresa_id, viaje_id, unidad_id, operador_id, fuente_id, litros) values (e, vj, u, o, f, 100) returning id into carga;
+
+  -- 80. Solo con cancelar_viaje(), con permiso y motivo, y sin cargas pendientes
+  begin update viajes set estado = 'cancelado', motivo_cancelacion = 'Directo sin función' where id = vj;
+    raise notice '80 FALLA: se canceló sin cancelar_viaje()';
+  exception when insufficient_privilege then raise notice '80 OK: solo cancelar_viaje() cancela'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  begin perform cancelar_viaje(vj, 'Viaje duplicado');
+    raise notice '80b FALLA: captura canceló';
+  exception when insufficient_privilege then raise notice '80b OK: captura no cancela'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  update miembros set puede_reabrir_viajes = false where usuario_id = '00000000-0000-0000-0000-0000000000a3';
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a3',false);
+  begin perform cancelar_viaje(vj, 'Viaje duplicado');
+    raise notice '80c FALLA: administración sin permiso canceló';
+  exception when insufficient_privilege then raise notice '80c OK: administración sin «puede reabrir» no cancela'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  begin perform cancelar_viaje(vj, 'no');
+    raise notice '80d FALLA: canceló sin motivo';
+  exception when raise_exception then raise notice '80d OK: cancelar pide motivo'; end;
+  begin perform cancelar_viaje(vj, 'Viaje duplicado');
+    raise notice '80e FALLA: canceló con carga pendiente';
+  exception when raise_exception then raise notice '80e OK: no cancela con cargas pendientes'; end;
+  update cargas_diesel set estado = 'validada' where id = carga;
+  perform cancelar_viaje(vj, 'Viaje duplicado');
+  select estado::text || ' ' || coalesce(cancelado_por::text, 'null') into t from viajes where id = vj;
+  raise notice '80f cancelado y quién: %', case when t = 'cancelado 00000000-0000-0000-0000-0000000000a1' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select nota into t from bitacora where viaje_id = vj and accion = 'cancelacion';
+  raise notice '80g motivo en la bitácora: %', case when t = 'Viaje duplicado' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+
+  -- 81. Cancelado: no se edita nada ni se reabre; no se borra
+  begin update viajes set producto = 'Otro' where id = vj; raise notice '81 FALLA: se editó un viaje cancelado';
+  exception when raise_exception then raise notice '81 OK: viaje cancelado no se edita'; end;
+  begin insert into gastos_viaje (empresa_id, viaje_id, categoria_id, monto) values (e, vj, cat, 10); raise notice '81b FALLA: gasto en viaje cancelado';
+  exception when raise_exception then raise notice '81b OK: no se agregan gastos a un viaje cancelado'; end;
+  begin update cargas_diesel set viaje_id = null where id = carga; raise notice '81c FALLA: carga sacada del viaje cancelado';
+  exception when raise_exception then raise notice '81c OK: cargas de viaje cancelado no se mueven'; end;
+  begin perform reabrir_viaje(vj, 'Me equivoqué'); raise notice '81d FALLA: se reabrió un viaje cancelado';
+  exception when raise_exception then raise notice '81d OK: un viaje cancelado no se reabre'; end;
+  delete from viajes where id = vj; get diagnostics n = row_count;
+  raise notice '81e viajes cancelados borrados (esperado 0): %', n;
+  delete from viajes where empresa_id = e; get diagnostics n = row_count;
+  raise notice '81f viajes que el dueño borró (esperado 0): %', n;
+  delete from cargas_diesel where empresa_id = e; get diagnostics n = row_count;
+  raise notice '81g cargas que el dueño borró (esperado 0): %', n;
+  -- 82. Un viaje cerrado no se cancela
+  begin perform cancelar_viaje((select v from ctx where k='viajeCerrado'), 'Viaje duplicado');
+    raise notice '82 FALLA: se canceló un viaje cerrado';
+  exception when raise_exception then raise notice '82 OK: solo se cancela un viaje abierto'; end;
+  -- 82b. Captura sigue viendo el viaje (para el filtro de cancelados)
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a2',false);
+  select count(*) into n from viajes where id = vj; raise notice '82b captura ve el viaje cancelado (esperado 1): %', n;
+end $$;

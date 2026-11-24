@@ -75,11 +75,15 @@ export function ListaViajes({ viajes, veTarifas, nombreArchivo }: { viajes: Viaj
                       {v.estado === "abierto" && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">abierto</span>
                       )}
+                      {v.estado === "cancelado" && (
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800 dark:bg-red-950 dark:text-red-300">cancelado</span>
+                      )}
                     </p>
                     <p className="text-zinc-500">
                       {formatearFechaHora(v.fecha_salida)} · {vacio?.origen ?? "?"} → {cargado?.origen ?? vacio?.destino ?? "?"} → {cargado?.destino ?? "?"}
                       {v.cliente && ` · ${v.cliente}`}
                     </p>
+                    {v.estado === "cancelado" && <p className="text-red-700 dark:text-red-400">Motivo: {v.motivo_cancelacion}</p>}
                   </div>
                   <div className="text-right">
                     <p>

@@ -155,6 +155,19 @@ export async function reabrirViaje(id: string, _: EstadoFormulario, form: FormDa
   return { exito: true, mensaje: "Viaje reabierto." };
 }
 
+/** Cancelar un viaje abierto con motivo (dueño o quien puede reabrir). No se borra. */
+export async function cancelarViaje(id: string, _: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
+  const sesion = await sesionDeAccion();
+  if (!sesion) redirect("/login");
+  if (!sesion.empresa.puedeReabrir) return { mensaje: "No tienes permiso para cancelar viajes" };
+  const motivo = String(form.get("motivo") ?? "").trim();
+  if (motivo.length < 5) return { errores: { motivo: "Escribe el motivo (mínimo 5 caracteres)" } };
+  const { error } = await sesion.supabase.rpc("cancelar_viaje", { p_viaje: id, p_motivo: motivo });
+  if (error) return { mensaje: mensajeDeError(error, "No se pudo cancelar el viaje") };
+  refresh();
+  return { exito: true, mensaje: "Viaje cancelado." };
+}
+
 // ---------------------------------------------------------------------------
 // Tarifa y pago al operador (solo quien ve tarifas)
 // ---------------------------------------------------------------------------

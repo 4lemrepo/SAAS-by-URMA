@@ -233,6 +233,17 @@ describe("filtros", () => {
   it("incluir abiertos", () => {
     expect(calcularKpis(entrada, ["2026-10"], { incluirAbiertos: true }).operacion.viajes).toBe(3);
   });
+  it("los cancelados no cuentan nunca, ni en alertas", () => {
+    const conCancelado = {
+      ...entrada,
+      viajes: [...entrada.viajes, viaje({ id: "v9", folio: "F9", estado: "cancelado", ingreso: 1, costoVariable: 99_999, fechaSalida: "2026-10-01T14:00:00Z" })],
+    };
+    for (const incluirAbiertos of [false, true]) {
+      const k = calcularKpis(conCancelado, ["2026-10"], { incluirAbiertos });
+      expect(k.operacion.viajes).toBe(incluirAbiertos ? 3 : 2);
+      expect(k.alertas.some((a) => a.viajeId === "v9")).toBe(false);
+    }
+  });
 });
 
 describe("tendencia y comparación", () => {
