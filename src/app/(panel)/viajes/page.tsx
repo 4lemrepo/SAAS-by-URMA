@@ -49,6 +49,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
     operador: UUID.test(uno("operador")) ? uno("operador") : undefined,
     cliente: UUID.test(uno("cliente")) ? uno("cliente") : undefined,
     estado: ["abierto", "cerrado", "cancelado", "todos"].includes(uno("estado")) ? (uno("estado") as FiltrosViajes["estado"]) : undefined,
+    origen: ["capturados", "importados"].includes(uno("origen")) ? (uno("origen") as FiltrosViajes["origen"]) : undefined,
   };
   const db = await crearClienteServidor();
   const [viajes, nombres] = await Promise.all([
@@ -70,7 +71,7 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
   );
   return (
     <>
-      <form method="get" className="grid grid-cols-2 items-end gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <form method="get" className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4 lg:grid-cols-8">
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Desde</span>
           <input type="date" name="desde" defaultValue={filtros.desde} className="rounded-md border border-zinc-300 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-950" />
@@ -94,10 +95,26 @@ async function Contenido({ searchParams }: { searchParams: PageProps<"/viajes">[
           filtros.estado,
           "Abiertos y cerrados",
         )}
+        {selector(
+          "origen",
+          "Origen",
+          [
+            { id: "capturados", texto: "Capturados" },
+            { id: "importados", texto: "Importados" },
+          ],
+          filtros.origen,
+        )}
         <button type="submit" className="rounded-md border border-zinc-300 px-4 py-2 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
           Filtrar
         </button>
       </form>
+      {empresa.rol === "dueno" && (
+        <p className="text-sm">
+          <Link href="/viajes/importar" className="underline">
+            Importar viajes históricos desde Excel
+          </Link>
+        </p>
+      )}
       <ListaViajes viajes={viajes} ve={{ veTarifas: empresa.veTarifas, veUtilidades: empresa.veUtilidades }} nombreArchivo={`viajes-${filtros.desde}-a-${filtros.hasta}.xlsx`} />
     </>
   );

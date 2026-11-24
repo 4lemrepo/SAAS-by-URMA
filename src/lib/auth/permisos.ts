@@ -20,7 +20,9 @@ export type Permiso =
   | "capturar"
   | "validarCargas"
   | "cerrarViajes"
-  | "verConciliacion";
+  | "verConciliacion"
+  /** Importar viajes y costos históricos desde Excel (trae tarifas, pago y costos). */
+  | "importarHistorico";
 
 const PERMISOS: Record<Rol, readonly Permiso[]> = {
   dueno: [
@@ -32,6 +34,7 @@ const PERMISOS: Record<Rol, readonly Permiso[]> = {
     "validarCargas",
     "cerrarViajes",
     "verConciliacion",
+    "importarHistorico",
   ],
   administracion: ["verCatalogos", "editarCatalogos", "capturar", "validarCargas", "cerrarViajes", "verConciliacion"],
   captura: ["verCatalogos", "capturar"],

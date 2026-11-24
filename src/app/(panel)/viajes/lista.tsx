@@ -84,6 +84,9 @@ export function ListaViajes({
                       {v.estado === "abierto" && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">abierto</span>
                       )}
+                      {v.lote_id && (
+                        <span className="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-950 dark:text-sky-300">importado</span>
+                      )}
                       {v.estado === "cancelado" && (
                         <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800 dark:bg-red-950 dark:text-red-300">cancelado</span>
                       )}

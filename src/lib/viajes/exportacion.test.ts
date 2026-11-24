@@ -23,8 +23,8 @@ const viaje: ViajeParaExportar = {
   finanzas: { tipo_tarifa: "por_tonelada", tarifa: 650 },
   resumen: resumirViaje({
     tramos: [
-      { tipo: "vacio", odometroInicial: 0, odometroFinal: 100 },
-      { tipo: "cargado", odometroInicial: 100, odometroFinal: 500 },
+      { tipo: "vacio", km: 100 },
+      { tipo: "cargado", km: 400 },
     ],
     toneladasCargadas: 80,
     toneladasDescargadas: 79.5,

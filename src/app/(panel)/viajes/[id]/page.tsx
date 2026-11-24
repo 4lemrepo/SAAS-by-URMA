@@ -44,7 +44,7 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
   const r = viaje.resumen;
 
   const [formulario, fuentes, categorias, fotos, comprobantes, tolerancia, pagoConfigs] = await Promise.all([
-    abierto ? datosParaFormulario(db, empresa.empresaId, esAdmin) : null,
+    abierto && !viaje.lote_id ? datosParaFormulario(db, empresa.empresaId, esAdmin) : null,
     db.from("fuentes_diesel").select("id, nombre, tiene_factura").eq("empresa_id", empresa.empresaId).eq("activa", true).order("nombre"),
     db.from("categorias_gasto").select("id, nombre, tiene_factura").eq("empresa_id", empresa.empresaId).eq("activo", true).order("nombre"),
     urlsFirmadas(db, "tickets", viaje.cargas.map((c) => [c.id, c.foto_ticket_path])),
@@ -73,6 +73,11 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
             <span className={`ml-1 rounded px-2 py-0.5 align-middle text-sm font-medium ${COLOR_ESTADO[viaje.estado]}`}>
               {NOMBRE_ESTADO[viaje.estado]}
             </span>
+            {viaje.lote_id && (
+              <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 align-middle text-sm font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                Importado
+              </span>
+            )}
           </h1>
           <p className="text-sm text-zinc-500">
             {viaje.unidad} · {viaje.armado} · {viaje.operador}
@@ -90,6 +95,18 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-300">
           Cancelado el {formatearFechaHora(viaje.cancelado_en)}: «{viaje.motivo_cancelacion}». No cuenta en el tablero ni en las
           alertas y ya no se puede editar.
+        </p>
+      )}
+
+      {viaje.lote_id && (
+        <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+          Viaje importado de un Excel: no trae horas reales ni odómetros, así que no cuenta en días en ruta, utilización,
+          ingreso por unidad por día ni tiempos de carga y descarga.{" "}
+          {empresa.rol === "dueno" && (
+            <Link href="/viajes/importar" className="underline">
+              Ver importaciones
+            </Link>
+          )}
         </p>
       )}
 
@@ -214,7 +231,9 @@ function Datos({ viaje, tolerancia }: { viaje: ViajeCompleto; tolerancia: number
                   {t.tipo === "vacio" ? "Vacío" : "Cargado"}: {t.origen} → {t.destino} · {numero(Number(t.km))} km
                 </p>
                 <p className="text-zinc-500">
-                  Odómetro {numero(Number(t.odometro_inicial))} → {numero(Number(t.odometro_final))}
+                  {t.odometro_inicial === null || t.odometro_final === null
+                    ? "Sin odómetros"
+                    : `Odómetro ${numero(Number(t.odometro_inicial))} → ${numero(Number(t.odometro_final))}`}
                   {t.km_ruta !== null && ` · ruta ${numero(Number(t.km_ruta))} km (${rev.desviacionPct! > 0 ? "+" : ""}${rev.desviacionPct}%)`}
                   {t.motivo_desvio && ` · desvío: ${motivo(t.motivo_desvio)}${t.nota_desvio ? ` (${t.nota_desvio})` : ""}`}
                 </p>
@@ -231,7 +250,7 @@ function Datos({ viaje, tolerancia }: { viaje: ViajeCompleto; tolerancia: number
         <Dato titulo="Salida" valor={formatearFechaHora(viaje.fecha_salida)} />
         <Dato titulo="En carga" valor={`${formatearFechaHora(viaje.llegada_carga)} → ${formatearFechaHora(viaje.salida_carga)} (${numero(horasEntre(viaje.llegada_carga, viaje.salida_carga), 1)} h)`} />
         <Dato titulo="En descarga" valor={`${formatearFechaHora(viaje.llegada_descarga)} → ${formatearFechaHora(viaje.salida_descarga)} (${numero(horasEntre(viaje.llegada_descarga, viaje.salida_descarga), 1)} h)`} />
-        <Dato titulo="Días en ruta" valor={viaje.fecha_llegada ? numero((Date.parse(viaje.fecha_llegada) - Date.parse(viaje.fecha_salida)) / 86_400_000, 1) : "—"} />
+        <Dato titulo="Días en ruta" valor={viaje.fecha_llegada && !viaje.lote_id ? numero((Date.parse(viaje.fecha_llegada) - Date.parse(viaje.fecha_salida)) / 86_400_000, 1) : "—"} />
         {Number(viaje.km_sin_viaje) !== 0 && (
           <Dato titulo="Km sin viaje" valor={`${numero(Number(viaje.km_sin_viaje))} · ${viaje.explicacion_km_sin_viaje}`} negativo />
         )}

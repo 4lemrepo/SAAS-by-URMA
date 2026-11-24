@@ -16,6 +16,9 @@
  *   excluidas no entran en ningún KPI; se informan aparte.
  * - Filtrar por operador, cliente o ruta deja fuera los costos fijos (no son
  *   de un operador, cliente o ruta): se ve la contribución.
+ * - Los viajes importados de un Excel no traen horas reales: no cuentan en días
+ *   en ruta, utilización, ingreso por unidad por día ni tiempos de carga y
+ *   descarga (no tienen horas de carga ni descarga). Sí en todo lo demás.
  */
 import { asignarCostos, type ArmadoHistorico, type Costo, type MetodoProrrateo } from "@/lib/costos/asignacion";
 
@@ -27,6 +30,8 @@ export interface ViajeKpi {
   id: string;
   folio: string;
   estado: "abierto" | "cerrado" | "cancelado";
+  /** Importado de un Excel: sin horas reales ni odómetros. */
+  importado: boolean;
   fechaSalida: string;
   fechaLlegada: string | null;
   llegadaCarga: string | null;
@@ -104,6 +109,8 @@ export interface Filtros {
   incluirAbiertos?: boolean;
   /** Sin permiso de ver costos de unidad y generales: solo la contribución. */
   sinCostosFijos?: boolean;
+  /** Solo capturados en la app o solo importados (sin filtro: todos). */
+  origen?: "capturados" | "importados";
 }
 
 /**
@@ -293,9 +300,13 @@ export interface Kpis {
     unidadesActivas: number;
     viajesPorUnidad: number | null;
     kmPorUnidad: number | null;
+    /** Sin los importados (no traen horas). */
     diasEnRuta: number;
+    /** Sin los importados; null si todos los viajes del periodo son importados. */
     utilizacionPct: number | null;
     kmSinViaje: number;
+    /** Viajes importados del periodo (no cuentan en lo que usa horas). */
+    viajesImportados: number;
   };
   diesel: {
     litros: number;
@@ -311,6 +322,7 @@ export interface Kpis {
     ingreso: number;
     ingresoPorKm: number | null;
     ingresoPorTonelada: number | null;
+    /** Sin los importados; null si todos los viajes del periodo son importados. */
     ingresoPorUnidadDia: number | null;
     gastosPorCategoria: Record<string, number>;
     gastosViaje: number;
@@ -377,8 +389,12 @@ export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: 
       (!f.unidad || v.unidadId === f.unidad) &&
       (!f.operador || v.operadorId === f.operador) &&
       (!f.cliente || v.clienteId === f.cliente) &&
-      (!f.ruta || v.ruta === f.ruta),
+      (!f.ruta || v.ruta === f.ruta) &&
+      (!f.origen || v.importado === (f.origen === "importados")),
   );
+  // Lo que usa horas (días en ruta, utilización, ingreso por unidad por día): sin los importados.
+  const conHoras = delPeriodo.filter((v) => !v.importado);
+  const soloImportados = delPeriodo.length > 0 && conHoras.length === 0;
   const sinCostosFijos = !!(f.operador || f.cliente || f.ruta || f.sinCostosFijos);
 
   // Unidades activas: las activas hoy y las que tuvieron viaje en el mes.
@@ -455,7 +471,7 @@ export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: 
     : new Set(meses.flatMap((m) => unidadesPorMes[m] ?? [])).size;
   const diasConViaje = (unidad: string) => {
     const set = new Set<string>();
-    for (const v of delPeriodo.filter((x) => x.unidadId === unidad)) {
+    for (const v of conHoras.filter((x) => x.unidadId === unidad)) {
       let d = Date.parse(`${diaDe(v.fechaSalida)}T12:00:00Z`);
       const fin = Date.parse(`${diaDe(v.fechaLlegada ?? v.fechaSalida)}T12:00:00Z`);
       for (; d <= fin; d += 86_400_000) {
@@ -465,8 +481,8 @@ export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: 
     }
     return set.size;
   };
-  const unidadesConViaje = [...new Set(delPeriodo.map((v) => v.unidadId))];
-  const utilizacion = unidadesActivas
+  const unidadesConViaje = [...new Set(conHoras.map((v) => v.unidadId))];
+  const utilizacion = unidadesActivas && !soloImportados
     ? pct(unidadesConViaje.reduce((s, u) => s + diasConViaje(u), 0), unidadesActivas * dias)
     : null;
 
@@ -601,9 +617,10 @@ export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: 
       unidadesActivas,
       viajesPorUnidad: div(delPeriodo.length, unidadesActivas),
       kmPorUnidad: div(kmTotales, unidadesActivas),
-      diasEnRuta: r2(suma(delPeriodo.filter((v) => v.fechaLlegada), (v) => (Date.parse(v.fechaLlegada!) - Date.parse(v.fechaSalida)) / 86_400_000)),
+      diasEnRuta: r2(suma(conHoras.filter((v) => v.fechaLlegada), (v) => (Date.parse(v.fechaLlegada!) - Date.parse(v.fechaSalida)) / 86_400_000)),
       utilizacionPct: utilizacion,
       kmSinViaje: suma(delPeriodo, (v) => Math.max(0, v.kmSinViaje)),
+      viajesImportados: delPeriodo.length - conHoras.length,
     },
     diesel: {
       litros,
@@ -619,7 +636,7 @@ export function calcularKpis(entrada: EntradaKpis, meses: readonly string[], f: 
       ingreso,
       ingresoPorKm,
       ingresoPorTonelada: div(ingreso, suma(delPeriodo, (v) => v.toneladasFacturadas)),
-      ingresoPorUnidadDia: div(ingreso, unidadesActivas * dias),
+      ingresoPorUnidadDia: soloImportados ? null : div(suma(conHoras, (v) => v.ingreso), unidadesActivas * dias),
       gastosPorCategoria,
       gastosViaje: suma(delPeriodo, (v) => v.gastosViaje),
       pagoOperador: suma(delPeriodo, (v) => v.pagoOperador),

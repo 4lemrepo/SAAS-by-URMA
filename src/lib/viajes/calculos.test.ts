@@ -114,8 +114,8 @@ describe("resumirViaje", () => {
   // Viaje como el primero de tu Excel (valores inventados redondeados)
   const base: EntradaResumen = {
     tramos: [
-      { tipo: "vacio", odometroInicial: 100_000, odometroFinal: 100_610 },
-      { tipo: "cargado", odometroInicial: 100_610, odometroFinal: 101_090 },
+      { tipo: "vacio", km: 610 },
+      { tipo: "cargado", km: 480 },
     ],
     toneladasCargadas: 83.15,
     toneladasDescargadas: 82.9,

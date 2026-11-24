@@ -22,6 +22,11 @@ describe("puede", () => {
     expect(puede("captura", "validarCargas")).toBe(false);
     expect(puede("captura", "verConciliacion")).toBe(false);
   });
+  it("solo el dueño importa históricos (traen tarifas, pago y costos)", () => {
+    expect(puede("dueno", "importarHistorico")).toBe(true);
+    expect(puede("administracion", "importarHistorico")).toBe(false);
+    expect(puede("captura", "importarHistorico")).toBe(false);
+  });
   it("un rol desconocido (p. ej. el antiguo operador) no puede nada", () => {
     expect(puede("operador" as never, "verCatalogos")).toBe(false);
   });

@@ -1,6 +1,7 @@
 import "server-only";
 import { crearClienteServidor } from "@/lib/supabase/server";
 import { leerEquipo } from "@/lib/catalogos/datos";
+import { ORIGEN_SIN_DATO } from "@/lib/importacion/historico";
 import { ZONA } from "./fechas";
 import { tasaIva, type TasaIva } from "@/lib/costos/iva";
 import { resumirViaje, type BaseFlete, type EsquemaPago, type ResumenViaje, type TipoTramo } from "./calculos";
@@ -13,8 +14,9 @@ export interface Tramo {
   tipo: TipoTramo;
   origen: string;
   destino: string;
-  odometro_inicial: number;
-  odometro_final: number;
+  /** null en un tramo importado: el Excel solo trae km. */
+  odometro_inicial: number | null;
+  odometro_final: number | null;
   km: number;
   ruta_id: string | null;
   km_ruta: number | null;
@@ -118,6 +120,8 @@ export interface Viaje {
   remisiones: string[];
   /** No. de factura al cliente (varios viajes pueden compartirla). */
   factura_cliente: string | null;
+  /** Lote de importación del que vino (null = capturado en la app). */
+  lote_id: string | null;
   creado_en: string;
 }
 export interface ViajeCompleto extends Viaje {
@@ -152,10 +156,12 @@ export interface FiltrosViajes {
   /** Sin estado: abiertos y cerrados (los cancelados solo si se piden, o por id). */
   estado?: EstadoViaje | "todos";
   ids?: string[];
+  /** Solo capturados en la app o solo importados de un Excel. */
+  origen?: "capturados" | "importados";
 }
 
 const COLUMNAS_VIAJE =
-  "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, cancelado_en, motivo_cancelacion, remisiones, factura_cliente, creado_en";
+  "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, cancelado_en, motivo_cancelacion, remisiones, factura_cliente, lote_id, creado_en";
 
 /**
  * Consulta por lotes de ids: una URL con cientos de ids no cabe en una
@@ -212,6 +218,8 @@ export async function leerViajes(
     // Un viaje cancelado sale de listas y KPIs; se ve con su filtro o abriéndolo.
     else if (!filtros.estado && !filtros.ids) q = q.neq("estado", "cancelado");
     if (filtros.ids) q = q.in("id", filtros.ids);
+    if (filtros.origen === "capturados") q = q.is("lote_id", null);
+    if (filtros.origen === "importados") q = q.not("lote_id", "is", null);
     return q.order("fecha_salida", { ascending: false }).order("id");
   };
   const viajes = (await paginar((desde, hasta) => consulta().range(desde, hasta))) as unknown as Viaje[];
@@ -305,7 +313,7 @@ export async function leerViajes(
       finanzas: f,
       pago: p,
       resumen: resumirViaje({
-        tramos: t.map((x) => ({ tipo: x.tipo, odometroInicial: Number(x.odometro_inicial), odometroFinal: Number(x.odometro_final) })),
+        tramos: t.map((x) => ({ tipo: x.tipo, km: Number(x.km) })),
         toneladasCargadas: num(v.toneladas_cargadas),
         toneladasDescargadas: num(v.toneladas_descargadas),
         tarifa: f ? { tipo: f.tipo_tarifa, tarifa: Number(f.tarifa), facturaPor: f.factura_por } : null,
@@ -383,7 +391,8 @@ export async function ultimoPuntoDeUnidad(
   const ultimo = (tramos ?? []).find((t) => t.tipo === "cargado") ?? (tramos ?? []).find((t) => t.tipo === "vacio");
   return {
     lugar: (ultimo?.destino as string) ?? null,
-    odometro: ultimo ? Number(ultimo.odometro_final) : null,
+    // Un viaje importado no trae odómetros: no hay contra qué revisar la continuidad.
+    odometro: ultimo?.odometro_final === null || ultimo?.odometro_final === undefined ? null : Number(ultimo.odometro_final),
     operadorId: data.operador_id as string,
   };
 }
@@ -400,6 +409,8 @@ export async function leerSugerencias(db: ClienteSupabase, empresaId: string) {
     lugares.add(String(t.origen).toUpperCase());
     lugares.add(String(t.destino).toUpperCase());
   }
+  // Origen del tramo vacío de los viajes importados: no es un lugar.
+  lugares.delete(ORIGEN_SIN_DATO);
   return {
     lugares: [...lugares].sort((a, b) => a.localeCompare(b, "es")),
     productos: [...new Set((productos.data ?? []).map((p) => String(p.producto)))].sort((a, b) => a.localeCompare(b, "es")),
@@ -419,7 +430,7 @@ export async function ultimosPuntos(db: ClienteSupabase, empresaId: string) {
   const ultimoPorUnidad = new Map<string, { id: string; operador_id: string }>();
   for (const v of recientes ?? []) if (!ultimoPorUnidad.has(v.unidad_id)) ultimoPorUnidad.set(v.unidad_id, v);
   const ids = [...ultimoPorUnidad.values()].map((v) => v.id);
-  const tramos = await porLotes<{ viaje_id: string; tipo: string; destino: string; odometro_final: number }>(ids, (l) =>
+  const tramos = await porLotes<{ viaje_id: string; tipo: string; destino: string; odometro_final: number | null }>(ids, (l) =>
     db.from("tramos_viaje").select("viaje_id, tipo, destino, odometro_final").in("viaje_id", l),
   );
   const resultado: Record<string, { lugar: string | null; odometro: number | null; operadorId: string | null }> = {};
@@ -428,7 +439,7 @@ export async function ultimosPuntos(db: ClienteSupabase, empresaId: string) {
     const ultimo = propios.find((t) => t.tipo === "cargado") ?? propios.find((t) => t.tipo === "vacio");
     resultado[unidad] = {
       lugar: ultimo?.destino ?? null,
-      odometro: ultimo ? Number(ultimo.odometro_final) : null,
+      odometro: ultimo?.odometro_final === null || ultimo?.odometro_final === undefined ? null : Number(ultimo.odometro_final),
       operadorId: v.operador_id,
     };
   }

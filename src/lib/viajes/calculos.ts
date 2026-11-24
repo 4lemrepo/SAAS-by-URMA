@@ -3,7 +3,8 @@
  * lista, la exportación y el tablero, así todos dan el mismo número.
  *
  * Un viaje = tramo VACÍO (A → B, lugar de carga) + tramo CARGADO (B → C,
- * lugar de descarga). Km de cada tramo = odómetro final − inicial.
+ * lugar de descarga). Km de cada tramo = odómetro final − inicial (lo guarda
+ * la base; un tramo importado sin odómetros trae sus km).
  */
 import { desglosarIva, type Desglose, type TasaIva } from "@/lib/costos/iva";
 
@@ -11,11 +12,8 @@ export type TipoTramo = "vacio" | "cargado";
 
 export interface Tramo {
   tipo: TipoTramo;
-  odometroInicial: number;
-  odometroFinal: number;
+  km: number;
 }
-
-export const kmTramo = (t: Pick<Tramo, "odometroInicial" | "odometroFinal">) => t.odometroFinal - t.odometroInicial;
 
 /**
  * Continuidad con el viaje anterior de la unidad: si el odómetro inicial no es
@@ -250,7 +248,7 @@ export interface ResumenViaje {
 }
 
 export function resumirViaje(e: EntradaResumen): ResumenViaje {
-  const kmDe = (tipo: TipoTramo) => e.tramos.filter((t) => t.tipo === tipo).reduce((s, t) => s + kmTramo(t), 0);
+  const kmDe = (tipo: TipoTramo) => e.tramos.filter((t) => t.tipo === tipo).reduce((s, t) => s + t.km, 0);
   const kmVacio = kmDe("vacio");
   const kmCargado = kmDe("cargado");
 

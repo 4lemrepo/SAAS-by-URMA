@@ -1103,3 +1103,104 @@ begin
   perform set_config('request.jwt.claim.sub', cap::text, false);
   select count(*) into n from movimientos_tanque; raise notice '113c movimientos que ve captura (esperado 0): %', n;
 end $$;
+
+-- ---------- Importación de viajes históricos (migración 20261124000200) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  u uuid; vj uuid; lote uuid; r jsonb; datos jsonb;
+  adm uuid := '00000000-0000-0000-0000-0000000000a3'; cap uuid := '00000000-0000-0000-0000-0000000000a2';
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into viajes (empresa_id, folio, unidad_id, operador_id, fecha_salida) values (e, 'H-EXISTE', u, o, now());
+  datos := jsonb_build_object('archivo', 'control.xlsx',
+    'viajes', jsonb_build_array(
+      jsonb_build_object('folio', 'H-001', 'dia', '2026-01-05', 'unidad_id', u, 'operador', 'OPERADOR NUEVO', 'cliente', 'CLIENTE NUEVO',
+        'origen', 'LUGAR A', 'destino', 'LUGAR B', 'km_vacio', 600, 'km_cargado', 480, 'toneladas', 80.515, 'tarifa', 650,
+        'pago_manual', 6552, 'remisiones', jsonb_build_array('H-001', 'H-002'), 'factura_cliente', null, 'notas', 'Importado, fila 4',
+        'carga', jsonb_build_object('fuente', 'TOKA', 'litros', 1000, 'precio_litro', 27.0116, 'importe', 27011.64, 'tiene_factura', true, 'iva', 3725.74),
+        'gastos', jsonb_build_array(
+          jsonb_build_object('categoria', 'Casetas', 'monto', 1642.5, 'tiene_factura', true, 'iva', 226.55, 'notas', 'Del Excel: 1178 + 464.5'),
+          jsonb_build_object('categoria', 'Gastos operativos', 'monto', 3482.4, 'tiene_factura', false, 'iva', 0, 'notas', null))),
+      jsonb_build_object('folio', 'h-existe', 'dia', '2026-01-06', 'unidad_id', u, 'operador', 'Juan', 'cliente', null,
+        'origen', 'LUGAR A', 'destino', 'LUGAR B', 'km_vacio', 0, 'km_cargado', 480, 'toneladas', null, 'tarifa', null,
+        'pago_manual', null, 'remisiones', '[]'::jsonb, 'carga', null, 'gastos', '[]'::jsonb, 'notas', 'x')),
+    'costos', jsonb_build_array(
+      jsonb_build_object('unidad_id', u, 'categoria', 'Mantenimiento tracto', 'mes', '2026-03-01', 'monto', 7266.00, 'iva', 1002.21, 'notas', 'subtotal sin IVA')));
+
+  -- 120. Administración y captura no importan
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  begin perform importar_historico(e, datos); raise notice '120 FALLA: administración importó';
+  exception when insufficient_privilege then raise notice '120 OK: administración no importa'; end;
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  begin perform importar_historico(e, datos); raise notice '120b FALLA: captura importó';
+  exception when insufficient_privilege then raise notice '120b OK: captura no importa'; end;
+
+  -- 121. El dueño importa: viaje cerrado, tramos sin odómetros, carga validada, gastos, tarifa, pago y costo
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  r := importar_historico(e, datos);
+  lote := (r->>'lote')::uuid;
+  raise notice '121 resultado: %', case when (r->>'viajes', r->>'omitidos', r->>'costos') = ('1', '1', '1') then 'OK' else 'FALLA ' || r::text end;
+  select id into vj from viajes where folio = 'H-001' and empresa_id = e;
+  select estado::text || ' ' || toneladas_cargadas::text || ' ' || array_to_string(remisiones, '+') || ' ' || (lote_id = lote)::text
+    into t from viajes where id = vj;
+  raise notice '121b viaje importado: %', case when t = 'cerrado 80.515 H-001+H-002 true' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select string_agg(tipo::text || ':' || origen || '>' || destino || ':' || km::text || ':' || coalesce(odometro_inicial::text, 'sin'), ' ' order by tipo)
+    into t from tramos_viaje where viaje_id = vj;
+  raise notice '121c tramos: %', case when t = 'vacio:(SIN DATO)>LUGAR A:600.0:sin cargado:LUGAR A>LUGAR B:480.0:sin' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select estado::text || ' ' || importe::text || ' ' || costo::text into t from cargas_diesel where viaje_id = vj;
+  raise notice '121d carga: %', case when t = 'validada 27011.64 23285.90' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from gastos_viaje g join categorias_gasto c on c.id = g.categoria_id
+    where g.viaje_id = vj and ((c.nombre = 'Casetas' and g.tiene_factura and g.notas like 'Del Excel%') or (c.nombre = 'Gastos operativos' and not g.tiene_factura and not c.tiene_factura));
+  raise notice '121e gastos con su factura (esperado 2): %', n;
+  select tarifa::text || ' ' || p.pago_operador_manual::text || ' ' || p.esquema::text into t
+    from viajes_finanzas f join viajes_pago p using (viaje_id) where f.viaje_id = vj;
+  raise notice '121f tarifa y pago manual: %', case when t = '650.00 6552.00 pct_flete' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select monto::text || ' ' || iva::text || ' ' || costo::text || ' ' || tiene_factura::text into t from costos where lote_id = lote;
+  raise notice '121g costo con el subtotal del Excel: %', case when t = '7266.00 1002.21 6263.79 true' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  select count(*) into n from operadores where empresa_id = e and nombre = 'OPERADOR NUEVO';
+  raise notice '121h operador nuevo dado de alta (esperado 1): %', n;
+  select count(*) into n from fuentes_diesel where empresa_id = e and nombre = 'TOKA' and tiene_factura;
+  raise notice '121i fuente nueva con factura (esperado 1): %', n;
+
+  -- 122. Reimportar el mismo lote no duplica viajes ni costos
+  begin perform importar_historico(e, datos); raise notice '122 FALLA: se reimportó lo mismo';
+  exception when raise_exception then raise notice '122 OK: nada nuevo, no se duplica'; end;
+
+  -- 123. Nadie asigna ni cambia el lote a mano; un tramo sin odómetros solo en viajes importados
+  begin insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, lote_id) values (e, u, o, now(), lote);
+    raise notice '123 FALLA: se asignó un lote a mano';
+  exception when insufficient_privilege then raise notice '123 OK: el lote solo lo pone la importación'; end;
+  select id into vj from viajes where folio = 'H-EXISTE' and empresa_id = e;
+  begin insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, km) values (e, vj, 'vacio', 'AA', 'BB', 100);
+    raise notice '123b FALLA: tramo sin odómetros en un viaje capturado';
+  exception when raise_exception then raise notice '123b OK: un viaje capturado lleva odómetros'; end;
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final, km)
+    values (e, vj, 'vacio', 'AA', 'BB', 1000, 1250, 5) returning km::text into t;
+  raise notice '123c km del tramo con odómetros: %', case when t = '250.0' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  begin update viajes set lote_id = null where lote_id = lote; get diagnostics n = row_count;
+    raise notice '123d FALLA: administración quitó el lote (%)', n;
+  exception when insufficient_privilege or raise_exception then raise notice '123d OK: el lote no se cambia'; end;
+  select count(*) into n from lotes_importacion where id = lote; raise notice '123e administración ve el lote (esperado 1): %', n;
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  select count(*) into n from lotes_importacion; raise notice '123f lotes que ve captura (esperado 0): %', n;
+
+  -- 124. Anular: solo el dueño, con motivo; cancela viajes cerrados y costos, y libera los folios
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  begin perform anular_lote(lote, 'Importé el archivo equivocado'); raise notice '124 FALLA: administración anuló';
+  exception when insufficient_privilege then raise notice '124 OK: administración no anula'; end;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  begin perform anular_lote(lote, 'no'); raise notice '124b FALLA: anuló sin motivo';
+  exception when raise_exception then raise notice '124b OK: anular pide motivo'; end;
+  perform anular_lote(lote, 'Importé el archivo equivocado');
+  select count(*) into n from viajes where lote_id = lote and estado = 'cancelado'; raise notice '124c viajes cancelados (esperado 1): %', n;
+  select count(*) into n from costos where lote_id = lote and cancelado; raise notice '124d costos cancelados (esperado 1): %', n;
+  select count(*) into n from bitacora where accion = 'cancelacion' and nota like 'Importación anulada%' and viaje_id in (select id from viajes where lote_id = lote);
+  raise notice '124e motivo en la bitácora (esperado 1): %', n;
+  begin perform anular_lote(lote, 'Otra vez'); raise notice '124f FALLA: se anuló dos veces';
+  exception when raise_exception then raise notice '124f OK: un lote se anula una vez'; end;
+  r := importar_historico(e, datos);
+  raise notice '124g reimportar tras anular: %', case when (r->>'viajes', r->>'costos') = ('1', '1') then 'OK' else 'FALLA ' || r::text end;
+  select count(*) into n from viajes where empresa_id = e and folio = 'H-001'; raise notice '124h viajes H-001, uno cancelado y uno vigente (esperado 2): %', n;
+end $$;

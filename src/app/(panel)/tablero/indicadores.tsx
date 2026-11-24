@@ -45,6 +45,7 @@ export async function Indicadores({
     ruta: uno("ruta") || undefined,
     incluirAbiertos: uno("abiertos") === "1",
     sinCostosFijos: !ve.veCostos,
+    origen: uno("origen") === "capturados" || uno("origen") === "importados" ? (uno("origen") as Filtros["origen"]) : undefined,
   };
 
   // "Mostrar con IVA": diésel, gastos y costos con lo pagado, para comparar contra un control que trae el IVA.
@@ -91,6 +92,7 @@ export async function Indicadores({
         {selector("operador", "Operador", Object.entries(entrada.nombres.operadores), filtros.operador)}
         {selector("cliente", "Cliente", Object.entries(entrada.nombres.clientes), filtros.cliente)}
         {selector("ruta", "Ruta", rutas.map((r) => [r, r]), filtros.ruta)}
+        {selector("origen", "Viajes", [["capturados", "Capturados"], ["importados", "Importados"]], filtros.origen)}
         <label className="flex items-center gap-2 pb-2 text-sm">
           <input type="checkbox" name="abiertos" value="1" defaultChecked={filtros.incluirAbiertos} />
           Incluir abiertos
@@ -115,6 +117,13 @@ export async function Indicadores({
         <ExportarTablero hojas={hojasTablero(k, ant, tend, `Tablero ${titulo}`, financiero)} nombreArchivo={`tablero-${titulo.replace(/ /g, "")}${conIva ? "-con-iva" : ""}.xlsx`} />
       </div>
 
+      {k.operacion.viajesImportados > 0 && (
+        <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+          {k.operacion.viajesImportados} de los {k.operacion.viajes} viajes del periodo son importados de un Excel: no traen horas
+          reales, así que no cuentan en días en ruta, utilización, ingreso por unidad por día ni tiempos de carga y descarga. Sí
+          cuentan en km, diésel, ingreso, costos y utilidad.
+        </p>
+      )}
       {conIva && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
           Con IVA: diésel, gastos y costos son lo pagado, incluido el IVA que se acredita. Sirve para comparar contra un Excel que

@@ -128,6 +128,7 @@ function aViajeKpi(v: ViajeCompleto, unidades: Map<string, Rend>, rutas: Map<str
     id: v.id,
     folio: v.folio,
     estado: v.estado,
+    importado: v.lote_id !== null,
     fechaSalida: v.fecha_salida,
     fechaLlegada: v.fecha_llegada,
     llegadaCarga: v.llegada_carga,

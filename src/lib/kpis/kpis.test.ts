@@ -7,6 +7,7 @@ const viaje = (o: Partial<ViajeKpi>): ViajeKpi => ({
   id: "v",
   folio: "F",
   estado: "cerrado",
+  importado: false,
   fechaSalida: "2026-10-05T14:00:00Z",
   fechaLlegada: "2026-10-06T14:00:00Z",
   llegadaCarga: null,
@@ -269,5 +270,36 @@ describe("tendencia y comparación", () => {
     expect(variacion(110, 100)).toBe(10);
     expect(variacion(-50, -100)).toBe(50);
     expect(variacion(5, 0)).toBeNull();
+  });
+});
+
+describe("viajes importados (sin horas reales)", () => {
+  const importado = viaje({
+    id: "v5",
+    folio: "UL-5",
+    importado: true,
+    unidadId: "T1",
+    fechaSalida: "2026-10-15T18:00:00Z",
+    fechaLlegada: "2026-10-15T18:00:00Z",
+    ingreso: 10_000,
+  });
+  const e = { ...entrada, viajes: [...entrada.viajes, importado] };
+
+  it("cuentan en km, ingreso y costos, pero no en días en ruta, utilización ni ingreso por unidad por día", () => {
+    const k = calcularKpis(e, ["2026-10"]);
+    expect(k.operacion.viajes).toBe(3);
+    expect(k.operacion.viajesImportados).toBe(1);
+    expect(k.financieros.ingreso).toBe(70_000);
+    expect(k.operacion.diasEnRuta).toBe(3);
+    expect(k.operacion.utilizacionPct).toBe(8.1);
+    expect(k.financieros.ingresoPorUnidadDia).toBeCloseTo(60_000 / 62);
+  });
+  it("filtro capturados / importados", () => {
+    const capturados = calcularKpis(e, ["2026-10"], { origen: "capturados" });
+    expect([capturados.operacion.viajes, capturados.operacion.viajesImportados]).toEqual([2, 0]);
+    const importados = calcularKpis(e, ["2026-10"], { origen: "importados" });
+    expect([importados.operacion.viajes, importados.financieros.ingreso]).toEqual([1, 10_000]);
+    // Solo importados: sin horas no hay utilización ni ingreso por unidad por día.
+    expect([importados.operacion.utilizacionPct, importados.financieros.ingresoPorUnidadDia, importados.operacion.diasEnRuta]).toEqual([null, null, 0]);
   });
 });
