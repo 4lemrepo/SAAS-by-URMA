@@ -65,6 +65,36 @@ export interface ViajeValidado {
   km_sin_viaje: number;
   explicacion_km_sin_viaje: string | null;
   notas: string | null;
+  /** Folios de remisión que pide el cliente (uno por remolque, por ejemplo). */
+  remisiones: string[];
+  /** No. de factura al cliente; varios viajes pueden compartirla. */
+  factura_cliente: string | null;
+}
+
+/**
+ * Remisiones escritas en un solo campo: separadas por coma, punto y coma,
+ * diagonal o renglón. Sin repetidas (sin importar mayúsculas).
+ */
+export function parsearRemisiones(v: string | undefined): string[] {
+  const vistas = new Set<string>();
+  const res: string[] = [];
+  for (const parte of (v ?? "").split(/[,;/\n]+/)) {
+    const r = normalizarTexto(parte);
+    if (r && !vistas.has(r.toUpperCase())) {
+      vistas.add(r.toUpperCase());
+      res.push(r);
+    }
+  }
+  return res;
+}
+
+/** Errores de remisiones y factura al cliente (los mismos límites que la base). */
+export function revisarRemisionesFactura(remisiones: string[], factura: string | null): Record<string, string> {
+  const errores: Record<string, string> = {};
+  if (remisiones.length > 20) errores.remisiones = "Máximo 20 remisiones";
+  else if (remisiones.some((r) => r.length > 40)) errores.remisiones = "Cada remisión: máximo 40 caracteres";
+  if (factura && factura.length > 40) errores.factura_cliente = "Máximo 40 caracteres";
+  return errores;
 }
 
 export type ResultadoViaje =
@@ -187,6 +217,10 @@ export function validarViaje(v: Valores, ctx: ContextoViaje): ResultadoViaje {
         : `El odómetro es menor que el del último viaje (${ctx.odometroAnterior}): explica por qué`;
   }
 
+  const remisiones = parsearRemisiones(v.remisiones);
+  const facturaCliente = opcional(v.factura_cliente);
+  Object.assign(errores, revisarRemisionesFactura(remisiones, facturaCliente));
+
   if (Object.keys(errores).length) return { ok: false, errores };
   return {
     ok: true,
@@ -209,6 +243,8 @@ export function validarViaje(v: Valores, ctx: ContextoViaje): ResultadoViaje {
       km_sin_viaje: continuidad.kmSinViaje,
       explicacion_km_sin_viaje: continuidad.requiereExplicacion ? explicacion : null,
       notas: opcional(v.notas),
+      remisiones,
+      factura_cliente: facturaCliente,
     },
   };
 }

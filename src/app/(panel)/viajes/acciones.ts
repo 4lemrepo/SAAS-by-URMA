@@ -126,6 +126,28 @@ export async function guardarViaje(id: string | null, _: EstadoFormulario, form:
   redirect(`/viajes/${viajeId}`);
 }
 
+/**
+ * No. de factura al cliente. Se puede capturar con el viaje cerrado (dueño y
+ * administración): se factura después de terminar el viaje.
+ */
+export async function guardarFacturaCliente(id: string, _: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
+  const sesion = await sesionDeAccion();
+  if (!sesion) redirect("/login");
+  if (!puede(sesion.empresa.rol, "cerrarViajes")) return { mensaje: "Solo dueño y administración capturan la factura" };
+  const factura = String(form.get("factura_cliente") ?? "").trim();
+  if (factura.length > 40) return { errores: { factura_cliente: "Máximo 40 caracteres" } };
+  const { data, error } = await sesion.supabase
+    .from("viajes")
+    .update({ factura_cliente: factura || null })
+    .eq("id", id)
+    .eq("empresa_id", sesion.empresa.empresaId)
+    .select("id");
+  if (error) return { mensaje: mensajeDeError(error, "No se pudo guardar la factura") };
+  if (!data?.length) return { mensaje: "No se encontró el viaje" };
+  refresh();
+  return { exito: true, mensaje: "Factura guardada." };
+}
+
 /** Cerrar: la base revisa que no haya cargas pendientes y que estén los dos tramos. */
 export async function cerrarViaje(id: string): Promise<string | null> {
   const sesion = await sesionDeAccion();

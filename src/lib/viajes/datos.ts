@@ -114,6 +114,10 @@ export interface Viaje {
   cerrado_en: string | null;
   cancelado_en: string | null;
   motivo_cancelacion: string | null;
+  /** Folios de remisión del cliente. */
+  remisiones: string[];
+  /** No. de factura al cliente (varios viajes pueden compartirla). */
+  factura_cliente: string | null;
   creado_en: string;
 }
 export interface ViajeCompleto extends Viaje {
@@ -151,7 +155,7 @@ export interface FiltrosViajes {
 }
 
 const COLUMNAS_VIAJE =
-  "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, cancelado_en, motivo_cancelacion, creado_en";
+  "id, folio, estado, unidad_id, operador_id, cliente_id, armado_id, producto, toneladas_cargadas, toneladas_descargadas, fecha_salida, llegada_carga, salida_carga, llegada_descarga, salida_descarga, fecha_llegada, odometro_anterior, km_sin_viaje, explicacion_km_sin_viaje, notas, cerrado_en, cancelado_en, motivo_cancelacion, remisiones, factura_cliente, creado_en";
 
 /**
  * Consulta por lotes de ids: una URL con cientos de ids no cabe en una

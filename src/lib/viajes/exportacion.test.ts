@@ -12,6 +12,8 @@ const viaje: ViajeParaExportar = {
   operador: "Operador Prueba",
   cliente: "Cliente Prueba",
   producto: "Maíz",
+  remisiones: ["R-10", "R-11"],
+  factura_cliente: "F-900",
   toneladas_cargadas: 80,
   toneladas_descargadas: 79.5,
   tramos: [
@@ -43,6 +45,8 @@ describe("filasExportacion", () => {
     expect(fila).toMatchObject({
       Folio: "URMA-0182",
       "Tramo cargado": "B → C",
+      "Remisiones del cliente": "R-10, R-11",
+      "Factura al cliente": "F-900",
       "Km totales": 500,
       Tarifa: "650 /t",
       "Cargos adicionales": 1500,

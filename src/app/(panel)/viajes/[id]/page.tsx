@@ -13,7 +13,7 @@ import { MOTIVOS_DESVIO } from "@/lib/viajes/formulario";
 import { revisarKm } from "@/lib/viajes/km";
 import { configParaOperador, describirPago, type ConfigPagoFila } from "@/lib/viajes/pago";
 import { FormularioViaje } from "../formulario-viaje";
-import { Cierre, FormularioFinanzas, SeccionCargas, SeccionCargosAdicionales, SeccionGastos } from "../piezas";
+import { Cierre, FacturaCliente, FormularioFinanzas, SeccionCargas, SeccionCargosAdicionales, SeccionGastos } from "../piezas";
 
 export const metadata: Metadata = { title: "Viaje · Control Diésel" };
 
@@ -78,6 +78,10 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
             {viaje.unidad} · {viaje.armado} · {viaje.operador}
             {viaje.cliente && ` · ${viaje.cliente}`}
             {viaje.producto && ` · ${viaje.producto}`}
+          </p>
+          <p className="text-sm text-zinc-500">
+            Remisiones del cliente: {viaje.remisiones.length ? viaje.remisiones.join(", ") : "—"} · Factura al cliente:{" "}
+            {viaje.factura_cliente ?? "—"}
           </p>
         </div>
       </div>
@@ -168,6 +172,7 @@ async function Viaje({ params }: { params: PageProps<"/viajes/[id]">["params"] }
       )}
 
       <section className="flex flex-col gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+        {viaje.estado === "cerrado" && esAdmin && <FacturaCliente viajeId={viaje.id} valor={viaje.factura_cliente} />}
         <Cierre
           viajeId={viaje.id}
           estado={viaje.estado}
@@ -282,6 +287,8 @@ function inicialesViaje(v: ViajeCompleto): Record<string, string> {
     llegada_descarga: isoALocal(v.llegada_descarga),
     salida_descarga: isoALocal(v.salida_descarga),
     notas: s(v.notas),
+    remisiones: v.remisiones.join(", "),
+    factura_cliente: s(v.factura_cliente),
   };
 }
 
@@ -361,6 +368,8 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   odometro_inicial: "Odómetro inicial",
   odometro_final: "Odómetro final",
   litros: "Litros",
+  remisiones: "Remisiones del cliente",
+  factura_cliente: "Factura al cliente",
 };
 const NOMBRE_TABLA: Record<string, string> = {
   viajes: "Viaje",

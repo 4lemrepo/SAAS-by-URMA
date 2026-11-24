@@ -20,6 +20,7 @@ import {
   cerrarViaje,
   guardarCarga,
   guardarCargoAdicional,
+  guardarFacturaCliente,
   guardarFinanzas,
   guardarGasto,
   reabrirViaje,
@@ -375,6 +376,31 @@ export function FormularioFinanzas({ viajeId, iniciales, conPago }: { viajeId: s
       </div>
       )}
       <BotonEnviar pendiente="Guardando…">{conPago ? "Guardar tarifa y pago" : "Guardar tarifa"}</BotonEnviar>
+    </form>
+  );
+}
+
+/** No. de factura al cliente de un viaje cerrado (dueño y administración). */
+export function FacturaCliente({ viajeId, valor }: { viajeId: string; valor: string | null }) {
+  const [estado, accion] = useActionState(guardarFacturaCliente.bind(null, viajeId), {});
+  const [editando, setEditando] = useState(false);
+  if (!editando) {
+    return (
+      <button type="button" onClick={() => setEditando(true)} className="self-start text-sm underline">
+        {valor ? "Cambiar No. de factura al cliente" : "Capturar No. de factura al cliente"}
+      </button>
+    );
+  }
+  return (
+    <form action={accion} className="flex max-w-md flex-col gap-2">
+      <Aviso texto={estado.mensaje} tipo={estado.exito ? "exito" : "error"} />
+      <Campo etiqueta="No. de factura al cliente" name="factura_cliente" defaultValue={valor ?? ""} maxLength={40} error={estado.errores?.factura_cliente} />
+      <div className="flex items-center gap-4">
+        <BotonEnviar pendiente="Guardando…">Guardar factura</BotonEnviar>
+        <button type="button" onClick={() => setEditando(false)} className="mt-2 text-sm underline">
+          Cerrar
+        </button>
+      </div>
     </form>
   );
 }

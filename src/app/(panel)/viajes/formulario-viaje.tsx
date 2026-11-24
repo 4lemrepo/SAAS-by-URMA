@@ -132,6 +132,21 @@ export function FormularioViaje({
           ayuda="Al llegar a descarga"
           error={e.toneladas_descargadas}
         />
+        <Campo
+          etiqueta="Remisiones del cliente"
+          name="remisiones"
+          defaultValue={v.remisiones ?? ""}
+          ayuda="Si son varias, sepáralas con coma"
+          error={e.remisiones}
+        />
+        <Campo
+          etiqueta="No. de factura al cliente"
+          name="factura_cliente"
+          defaultValue={v.factura_cliente ?? ""}
+          maxLength={40}
+          ayuda="Varios viajes pueden compartirla"
+          error={e.factura_cliente}
+        />
         {datos.esAdmin && (
           <Campo
             etiqueta="Folio"

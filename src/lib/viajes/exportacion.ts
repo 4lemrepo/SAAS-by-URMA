@@ -16,6 +16,8 @@ export interface ViajeParaExportar {
   operador: string;
   cliente: string | null;
   producto: string | null;
+  remisiones: string[];
+  factura_cliente: string | null;
   toneladas_cargadas: number | null;
   toneladas_descargadas: number | null;
   tramos: { tipo: "vacio" | "cargado"; origen: string; destino: string }[];
@@ -31,6 +33,7 @@ export function filasExportacion(viajes: readonly ViajeParaExportar[], { veTarif
   );
   const encabezados = [
     "Folio", "Estado", "Salida", "Llegada", "Unidad", "Armado", "Operador", "Cliente", "Producto",
+    "Remisiones del cliente", "Factura al cliente",
     "Tramo vacío", "Km vacío", "Tramo cargado", "Km cargado", "Km totales",
     "Ton. cargadas", "Ton. descargadas",
     ...(veTarifas ? ["Tarifa", "Flete", "Cargos adicionales", "Ingreso"] : []),
@@ -48,6 +51,7 @@ export function filasExportacion(viajes: readonly ViajeParaExportar[], { veTarif
     return [
       v.folio, v.estado, formatearFechaHora(v.fecha_salida), v.fecha_llegada ? formatearFechaHora(v.fecha_llegada) : null,
       v.unidad, v.armado, v.operador, v.cliente, v.producto,
+      v.remisiones.join(", ") || null, v.factura_cliente,
       tramo(v, "vacio"), r.kmVacio, tramo(v, "cargado"), r.kmCargado, r.kmTotales,
       v.toneladas_cargadas, v.toneladas_descargadas,
       ...(veTarifas

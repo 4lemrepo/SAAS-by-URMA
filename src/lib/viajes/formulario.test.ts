@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validarViaje, type ContextoViaje } from "./formulario";
+import { parsearRemisiones, validarViaje, type ContextoViaje } from "./formulario";
 
 const ctx: ContextoViaje = { odometroAnterior: 100_000, kmRuta: { vacio: null, cargado: 480 }, toleranciaKmPct: 10 };
 const base = {
@@ -70,5 +70,22 @@ describe("validarViaje", () => {
       ctx,
     );
     expect(!r.ok && Object.keys(r.errores).sort()).toEqual(["odometro_carga", "salida_carga", "toneladas_cargadas", "unidad_id"]);
+  });
+});
+
+describe("remisiones y factura al cliente", () => {
+  it("separa remisiones por coma, punto y coma, diagonal o renglón, sin repetidas", () => {
+    expect(parsearRemisiones(" R-1, r-1 ; R-2 / R-3\nR-4 ")).toEqual(["R-1", "R-2", "R-3", "R-4"]);
+    expect(parsearRemisiones("")).toEqual([]);
+  });
+  it("las guarda con el viaje; la factura es texto libre", () => {
+    const r = validarViaje({ ...base, remisiones: "UL-005928 / UL-005929", factura_cliente: " A-1520 " }, ctx);
+    expect(r.ok && [r.viaje.remisiones, r.viaje.factura_cliente]).toEqual([["UL-005928", "UL-005929"], "A-1520"]);
+    const sin = validarViaje(base, ctx);
+    expect(sin.ok && [sin.viaje.remisiones, sin.viaje.factura_cliente]).toEqual([[], null]);
+  });
+  it("respeta los límites de la base", () => {
+    const r = validarViaje({ ...base, remisiones: "x".repeat(41), factura_cliente: "y".repeat(41) }, ctx);
+    expect(!r.ok && Object.keys(r.errores).sort()).toEqual(["factura_cliente", "remisiones"]);
   });
 });

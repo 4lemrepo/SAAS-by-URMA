@@ -91,6 +91,8 @@ export function ListaViajes({
                     <p className="text-zinc-500">
                       {formatearFechaHora(v.fecha_salida)} · {vacio?.origen ?? "?"} → {cargado?.origen ?? vacio?.destino ?? "?"} → {cargado?.destino ?? "?"}
                       {v.cliente && ` · ${v.cliente}`}
+                      {v.remisiones.length > 0 && ` · Rem. ${v.remisiones.join(", ")}`}
+                      {v.factura_cliente && ` · Fact. ${v.factura_cliente}`}
                     </p>
                     {v.estado === "cancelado" && <p className="text-red-700 dark:text-red-400">Motivo: {v.motivo_cancelacion}</p>}
                   </div>

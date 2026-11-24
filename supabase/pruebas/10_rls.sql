@@ -1016,3 +1016,41 @@ begin
   select count(*) into n from usuarios_de_empresa(e) where usuario_id = adm and ve_tarifas and ve_utilidades and ve_costos;
   raise notice '97 interruptores en la lista de usuarios (esperado 1): %', n;
 end $$;
+
+-- ---------- Remisiones y factura al cliente (migración 20261124000000) ----------
+do $$
+declare n int; t text; e uuid := (select v from ctx where k='empA'); o uuid := (select v from ctx where k='opA');
+  u uuid; vj uuid;
+  adm uuid := '00000000-0000-0000-0000-0000000000a3'; cap uuid := '00000000-0000-0000-0000-0000000000a2';
+begin
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select id into u from unidades where empresa_id = e and numero_economico = '0708';
+  insert into viajes (empresa_id, unidad_id, operador_id, fecha_salida, fecha_llegada, remisiones)
+    values (e, u, o, now(), now(), array[' R-1 ', 'R-2']) returning id into vj;
+  select array_to_string(remisiones, '|') into t from viajes where id = vj;
+  raise notice '100 remisiones sin espacios: %', case when t = 'R-1|R-2' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  begin update viajes set remisiones = array['  '] where id = vj; raise notice '100b FALLA: remisión vacía';
+  exception when raise_exception then raise notice '100b OK: no hay remisiones vacías'; end;
+  insert into tramos_viaje (empresa_id, viaje_id, tipo, origen, destino, odometro_inicial, odometro_final) values
+    (e, vj, 'vacio', 'AA', 'BB', 1000, 1100), (e, vj, 'cargado', 'BB', 'CC', 1100, 1500);
+  update viajes set estado = 'cerrado' where id = vj;
+
+  -- 101. Con el viaje cerrado, dueño y administración capturan la factura al cliente, y nada más
+  perform set_config('request.jwt.claim.sub', adm::text, false);
+  update viajes set factura_cliente = ' F-100 ' where id = vj; get diagnostics n = row_count;
+  raise notice '101 factura capturada en viaje cerrado (esperado 1): %', n;
+  select factura_cliente into t from viajes where id = vj;
+  raise notice '101b factura sin espacios: %', case when t = 'F-100' then 'OK' else 'FALLA ' || coalesce(t, 'null') end;
+  begin update viajes set factura_cliente = 'F-101', producto = 'Otro' where id = vj;
+    raise notice '101c FALLA: se editó más que la factura de un viaje cerrado';
+  exception when raise_exception then raise notice '101c OK: en un viaje cerrado solo cambia la factura'; end;
+  perform set_config('request.jwt.claim.sub', cap::text, false);
+  update viajes set factura_cliente = 'F-999' where id = vj; get diagnostics n = row_count;
+  raise notice '101d facturas que captura cambió en un viaje cerrado (esperado 0): %', n;
+  perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
+  select count(*) into n from bitacora where viaje_id = vj and campo = 'factura_cliente' and valor_nuevo = 'F-100';
+  raise notice '101e cambio de factura en la bitácora (esperado 1): %', n;
+  -- 101f. Dos viajes pueden compartir la factura
+  update viajes set factura_cliente = 'F-100' where id = (select v from ctx where k='viajeCerrado'); get diagnostics n = row_count;
+  raise notice '101f otro viaje con la misma factura (esperado 1): %', n;
+end $$;
